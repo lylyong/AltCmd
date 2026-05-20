@@ -109,14 +109,14 @@ const (
 
 	timerIDRehook = 1
 
-	hotkeyActionCopy        = "copy"
-	hotkeyActionPaste       = "paste"
-	hotkeyActionCut         = "cut"
-	hotkeyActionUndo        = "undo"
-	hotkeyActionSave        = "save"
-	hotkeyActionNewTab      = "new_tab"
-	hotkeyActionCloseTab    = "close_tab"
-	hotkeyActionCloseWindow = "close_window"
+	hotkeyActionCopy         = "copy"
+	hotkeyActionPaste        = "paste"
+	hotkeyActionCut          = "cut"
+	hotkeyActionUndo         = "undo"
+	hotkeyActionSave         = "save"
+	hotkeyActionNewTab       = "new_tab"
+	hotkeyActionCloseTab     = "close_tab"
+	hotkeyActionCloseWindow  = "close_window"
 	hotkeyActionSwitchWindow = "switch_window"
 )
 
