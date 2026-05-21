@@ -16,6 +16,7 @@ AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 
 - `Alt+X` -> `Ctrl+X`
 - `Alt+Z` -> `Ctrl+Z`
 - `Alt+S` -> `Ctrl+S`
+- `Alt+A` -> `Ctrl+A`
 - `Alt+T` -> `Ctrl+T`
 - `Alt+W` -> `Ctrl+W`
 - `Alt+Q` -> `Alt+F4`
@@ -60,6 +61,7 @@ go build -o AltCmd.exe .
 		{ "combo": "Alt+X", "action": "cut", "enabled": true },
 		{ "combo": "Alt+Z", "action": "undo", "enabled": true },
 		{ "combo": "Alt+S", "action": "save", "enabled": true },
+		{ "combo": "Alt+A", "action": "select_all", "enabled": true },
 		{ "combo": "Alt+T", "action": "new_tab", "enabled": true },
 		{ "combo": "Alt+W", "action": "close_tab", "enabled": true },
 		{ "combo": "Alt+Q", "action": "close_window", "enabled": true },
@@ -75,6 +77,7 @@ go build -o AltCmd.exe .
 - `cut`
 - `undo`
 - `save`
+- `select_all`
 - `new_tab`
 - `close_tab`
 - `close_window`

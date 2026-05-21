@@ -114,6 +114,7 @@ const (
 	hotkeyActionCut          = "cut"
 	hotkeyActionUndo         = "undo"
 	hotkeyActionSave         = "save"
+	hotkeyActionSelectAll    = "select_all"
 	hotkeyActionNewTab       = "new_tab"
 	hotkeyActionCloseTab     = "close_tab"
 	hotkeyActionCloseWindow  = "close_window"
@@ -177,6 +178,7 @@ type app struct {
 	registeredByID       map[int]registeredHotkey
 	altComboTable        [256]int // vk -> hotkey ID; for Alt+key combos (zero = not registered)
 	pendingByKey         [256]int // vk -> hotkey ID; tracks swallowed combo key-downs awaiting key-up
+	pendingExecuteID     int
 	altDownPending       bool
 	altDownVK            uint
 	altComboHandled      bool
@@ -410,6 +412,7 @@ func defaultConfig() config {
 			{Combo: "Alt+X", Action: hotkeyActionCut, Enabled: true},
 			{Combo: "Alt+Z", Action: hotkeyActionUndo, Enabled: true},
 			{Combo: "Alt+S", Action: hotkeyActionSave, Enabled: true},
+			{Combo: "Alt+A", Action: hotkeyActionSelectAll, Enabled: true},
 			{Combo: "Alt+T", Action: hotkeyActionNewTab, Enabled: true},
 			{Combo: "Alt+W", Action: hotkeyActionCloseTab, Enabled: true},
 			{Combo: "Alt+Q", Action: hotkeyActionCloseWindow, Enabled: true},
@@ -665,6 +668,7 @@ func (a *app) registerHotkeys() {
 	a.registeredByID = make(map[int]registeredHotkey)
 	a.altComboTable = [256]int{}
 	a.pendingByKey = [256]int{}
+	a.pendingExecuteID = 0
 	a.altDownPending = false
 	a.altDownVK = 0
 	a.altComboHandled = false
@@ -768,6 +772,7 @@ func (a *app) reinstallHook() {
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
 	a.pendingByKey = [256]int{}
+	a.pendingExecuteID = 0
 }
 
 func (a *app) handleHotkeyID(id int) {
@@ -796,6 +801,8 @@ func (a *app) handleHotkeyID(id int) {
 		sendCtrlCombo('Z')
 	case hotkeyActionSave:
 		sendCtrlCombo('S')
+	case hotkeyActionSelectAll:
+		sendCtrlCombo('A')
 	case hotkeyActionNewTab:
 		sendCtrlCombo('T')
 	case hotkeyActionCloseTab:
@@ -820,6 +827,12 @@ func (a *app) handleHookKeyDown(vk uint) bool {
 
 	// If Alt is not pending, pass through.
 	if !a.altDownPending {
+		return false
+	}
+
+	// Escape cancels the pending Alt combo instead of replaying Alt into the system.
+	if vk == vkEscape {
+		a.cancelPendingAltCombo()
 		return false
 	}
 
@@ -848,25 +861,38 @@ func (a *app) handleHookKeyDown(vk uint) bool {
 func (a *app) handleHookKeyUp(vk uint) bool {
 	// Always swallow real Alt key-up to prevent menu activation.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
+		executeID := a.pendingExecuteID
+		if executeID == 0 {
+			executeID = a.takePendingComboID()
+		}
 		if a.altDownPending {
 			a.altDownPending = false
 			a.altDownVK = 0
 			a.altComboHandled = false
 		}
+		a.pendingExecuteID = 0
 		// If we injected synthetic Alt-down earlier, inject matching Alt-up
 		// to keep system key state consistent.
 		if a.syntheticAltInjected {
 			sendSequenceImmediate(keyEvent(uint16(vk), false))
 			a.syntheticAltInjected = false
 		}
+		if executeID != 0 {
+			postMessage(a.hwnd, wmExecute, uintptr(executeID), 0)
+		}
 		return true
 	}
 
-	// Dispatch combo on key-up.
+	// Hold combo execution until Alt is released, so external Ctrl+Alt shortcuts
+	// do not see our injected Ctrl+key while the user is still physically holding Alt.
 	if vk < 256 {
 		if id := a.pendingByKey[vk]; id != 0 {
 			a.pendingByKey[vk] = 0
-			postMessage(a.hwnd, wmExecute, uintptr(id), 0)
+			if a.altDownPending {
+				a.pendingExecuteID = id
+			} else {
+				postMessage(a.hwnd, wmExecute, uintptr(id), 0)
+			}
 			return true
 		}
 	}
@@ -888,6 +914,26 @@ func (a *app) flushPendingAlt() {
 	a.syntheticAltInjected = true
 	a.altDownPending = false
 	a.altDownVK = 0
+}
+
+func (a *app) takePendingComboID() int {
+	for index, id := range a.pendingByKey {
+		if id == 0 {
+			continue
+		}
+		a.pendingByKey[index] = 0
+		return id
+	}
+	return 0
+}
+
+func (a *app) cancelPendingAltCombo() {
+	a.altDownPending = false
+	a.altDownVK = 0
+	a.altComboHandled = false
+	a.syntheticAltInjected = false
+	a.pendingExecuteID = 0
+	a.pendingByKey = [256]int{}
 }
 
 func isModifierKey(vk uint) bool {
@@ -934,7 +980,8 @@ func callNextHook(nCode int, wParam uintptr, lParam uintptr) uintptr {
 func isSupportedAction(action string) bool {
 	switch action {
 	case hotkeyActionCopy, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
-		hotkeyActionSave, hotkeyActionNewTab, hotkeyActionCloseTab, hotkeyActionCloseWindow,
+		hotkeyActionSave, hotkeyActionSelectAll, hotkeyActionNewTab,
+		hotkeyActionCloseTab, hotkeyActionCloseWindow,
 		hotkeyActionSwitchWindow:
 		return true
 	default:
