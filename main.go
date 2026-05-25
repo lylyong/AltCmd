@@ -71,8 +71,8 @@ const (
 	vkF4       = 0x73
 	vkOem3     = 0xC0
 
-	keyStateDownMask  = 0x8000
-	altPendingTimeout = 500
+	keyStateDownMask     = 0x8000
+	altPendingTimeout    = 500
 	sendInputMaxAttempts = 3
 
 	processQueryLimited = 0x1000
