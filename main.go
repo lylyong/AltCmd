@@ -73,6 +73,7 @@ const (
 
 	keyStateDownMask  = 0x8000
 	altPendingTimeout = 500
+	sendInputMaxAttempts = 3
 
 	processQueryLimited = 0x1000
 	smtoAbortIfHung     = 0x0002
@@ -881,8 +882,6 @@ func (a *app) handleHookKeyUp(vk uint, eventTick uint32) bool {
 			a.altComboHandled = false
 		}
 		a.pendingExecuteID = 0
-		// If we injected synthetic Alt-down earlier, inject matching Alt-up
-		// to keep system key state consistent.
 		if a.syntheticAltInjected {
 			sendSequenceImmediate(keyEvent(uint16(vk), false))
 			a.syntheticAltInjected = false
@@ -893,8 +892,6 @@ func (a *app) handleHookKeyUp(vk uint, eventTick uint32) bool {
 		return true
 	}
 
-	// Hold combo execution until Alt is released, so external Ctrl+Alt shortcuts
-	// do not see our injected Ctrl+key while the user is still physically holding Alt.
 	if vk < 256 {
 		if id := a.pendingByKey[vk]; id != 0 {
 			a.pendingByKey[vk] = 0
@@ -910,8 +907,6 @@ func (a *app) handleHookKeyUp(vk uint, eventTick uint32) bool {
 	return false
 }
 
-// flushPendingAlt injects synthetic Alt key-down to the system.
-// Called when a non-registered key is pressed while Alt was pending.
 func (a *app) flushPendingAlt() {
 	if !a.altDownPending {
 		return
@@ -920,8 +915,7 @@ func (a *app) flushPendingAlt() {
 	if a.altDownVK != 0 {
 		vk = uint16(a.altDownVK)
 	}
-	sendSequenceImmediate(keyEvent(vk, true))
-	a.syntheticAltInjected = true
+	a.syntheticAltInjected = sendSequenceImmediate(keyEvent(vk, true))
 	a.altDownPending = false
 	a.altDownVK = 0
 	a.altDownTick = 0
@@ -1342,30 +1336,106 @@ func keyEvent(vk uint16, down bool) input {
 }
 
 func sendSequence(seq ...input) {
-	if len(seq) == 0 {
+	if !sendInputSequence(seq, true) {
 		return
-	}
-	sent, _, err := procSendInput.Call(
-		uintptr(len(seq)),
-		uintptr(unsafe.Pointer(&seq[0])),
-		unsafe.Sizeof(seq[0]),
-	)
-	if sent != uintptr(len(seq)) {
-		log.Printf("SendInput incomplete: want=%d got=%d err=%v", len(seq), sent, err)
 	}
 	time.Sleep(8 * time.Millisecond)
 }
 
 // sendSequenceImmediate sends input without sleeping. Safe for hook callback.
-func sendSequenceImmediate(seq ...input) {
+func sendSequenceImmediate(seq ...input) bool {
+	return sendInputSequence(seq, false)
+}
+
+func sendInputSequence(seq []input, allowLog bool) bool {
+	if len(seq) == 0 {
+		return true
+	}
+
+	totalSent := 0
+	for attempt := 0; totalSent < len(seq) && attempt < sendInputMaxAttempts; attempt++ {
+		sent, _, err := procSendInput.Call(
+			uintptr(len(seq)-totalSent),
+			uintptr(unsafe.Pointer(&seq[totalSent])),
+			unsafe.Sizeof(seq[0]),
+		)
+		if sent == 0 {
+			if allowLog {
+				log.Printf("SendInput failed: remaining=%d err=%v", len(seq)-totalSent, err)
+			}
+			continue
+		}
+		totalSent += int(sent)
+	}
+
+	if totalSent == len(seq) {
+		return true
+	}
+
+	if allowLog {
+		log.Printf("SendInput incomplete after retry: want=%d got=%d", len(seq), totalSent)
+	}
+	releasePressedKeys(seq[:totalSent], allowLog)
+	return false
+}
+
+func releasePressedKeys(seq []input, allowLog bool) {
 	if len(seq) == 0 {
 		return
 	}
-	procSendInput.Call(
-		uintptr(len(seq)),
-		uintptr(unsafe.Pointer(&seq[0])),
-		unsafe.Sizeof(seq[0]),
-	)
+
+	var pressed [256]int
+	for _, event := range seq {
+		if event.Type != inputKeyboard {
+			continue
+		}
+		vk := event.Ki.WVK
+		if vk >= 256 {
+			continue
+		}
+		if event.Ki.DwFlags&keyeventfKeyup != 0 {
+			if pressed[vk] > 0 {
+				pressed[vk]--
+			}
+			continue
+		}
+		pressed[vk]++
+	}
+
+	cleanup := make([]input, 0, len(seq))
+	for index := len(seq) - 1; index >= 0; index-- {
+		event := seq[index]
+		if event.Type != inputKeyboard {
+			continue
+		}
+		vk := event.Ki.WVK
+		if vk >= 256 || event.Ki.DwFlags&keyeventfKeyup != 0 {
+			continue
+		}
+		if pressed[vk] == 0 {
+			continue
+		}
+		cleanup = append(cleanup, keyEvent(vk, false))
+		pressed[vk]--
+	}
+
+	if len(cleanup) == 0 {
+		return
+	}
+
+	for attempt := 0; attempt < sendInputMaxAttempts; attempt++ {
+		sent, _, err := procSendInput.Call(
+			uintptr(len(cleanup)),
+			uintptr(unsafe.Pointer(&cleanup[0])),
+			unsafe.Sizeof(cleanup[0]),
+		)
+		if int(sent) == len(cleanup) {
+			return
+		}
+		if allowLog {
+			log.Printf("SendInput cleanup incomplete: want=%d got=%d err=%v", len(cleanup), sent, err)
+		}
+	}
 }
 
 func getForegroundWindow() windows.Handle {
