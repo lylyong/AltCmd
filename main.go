@@ -71,7 +71,8 @@ const (
 	vkF4       = 0x73
 	vkOem3     = 0xC0
 
-	keyStateDownMask = 0x8000
+	keyStateDownMask  = 0x8000
+	altPendingTimeout = 500
 
 	processQueryLimited = 0x1000
 	smtoAbortIfHung     = 0x0002
@@ -181,6 +182,7 @@ type app struct {
 	pendingExecuteID     int
 	altDownPending       bool
 	altDownVK            uint
+	altDownTick          uint32
 	altComboHandled      bool
 	syntheticAltInjected bool
 	nextHotkeyID         int
@@ -671,6 +673,7 @@ func (a *app) registerHotkeys() {
 	a.pendingExecuteID = 0
 	a.altDownPending = false
 	a.altDownVK = 0
+	a.altDownTick = 0
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
 	a.nextHotkeyID = 1
@@ -769,6 +772,7 @@ func (a *app) reinstallHook() {
 	// Reset hook state on reinstall to prevent stale state.
 	a.altDownPending = false
 	a.altDownVK = 0
+	a.altDownTick = 0
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
 	a.pendingByKey = [256]int{}
@@ -816,11 +820,14 @@ func (a *app) handleHotkeyID(id int) {
 
 // handleHookKeyDown processes key-down events from the low-level keyboard hook.
 // CRITICAL: Zero allocations. No fmt, no log, no map writes, no channel ops.
-func (a *app) handleHookKeyDown(vk uint) bool {
+func (a *app) handleHookKeyDown(vk uint, eventTick uint32) bool {
+	a.recoverStaleAltState(eventTick)
+
 	// Always swallow real Alt key-down.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
 		a.altDownPending = true
 		a.altDownVK = vk
+		a.altDownTick = eventTick
 		a.altComboHandled = false
 		return true
 	}
@@ -858,7 +865,9 @@ func (a *app) handleHookKeyDown(vk uint) bool {
 
 // handleHookKeyUp processes key-up events from the low-level keyboard hook.
 // CRITICAL: Zero allocations.
-func (a *app) handleHookKeyUp(vk uint) bool {
+func (a *app) handleHookKeyUp(vk uint, eventTick uint32) bool {
+	a.recoverStaleAltState(eventTick)
+
 	// Always swallow real Alt key-up to prevent menu activation.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
 		executeID := a.pendingExecuteID
@@ -868,6 +877,7 @@ func (a *app) handleHookKeyUp(vk uint) bool {
 		if a.altDownPending {
 			a.altDownPending = false
 			a.altDownVK = 0
+			a.altDownTick = 0
 			a.altComboHandled = false
 		}
 		a.pendingExecuteID = 0
@@ -914,6 +924,7 @@ func (a *app) flushPendingAlt() {
 	a.syntheticAltInjected = true
 	a.altDownPending = false
 	a.altDownVK = 0
+	a.altDownTick = 0
 }
 
 func (a *app) takePendingComboID() int {
@@ -930,10 +941,34 @@ func (a *app) takePendingComboID() int {
 func (a *app) cancelPendingAltCombo() {
 	a.altDownPending = false
 	a.altDownVK = 0
+	a.altDownTick = 0
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
 	a.pendingExecuteID = 0
 	a.pendingByKey = [256]int{}
+}
+
+func (a *app) recoverStaleAltState(eventTick uint32) {
+	if !a.altDownPending || a.altDownTick == 0 {
+		return
+	}
+	if eventTick-a.altDownTick < altPendingTimeout {
+		return
+	}
+	if isAltPhysicallyDown() {
+		a.altDownTick = eventTick
+		return
+	}
+	a.cancelPendingAltCombo()
+}
+
+func isAltPhysicallyDown() bool {
+	left, _, _ := procGetAsyncKeyState.Call(vkLMenu)
+	if left&keyStateDownMask != 0 {
+		return true
+	}
+	right, _, _ := procGetAsyncKeyState.Call(vkRMenu)
+	return right&keyStateDownMask != 0
 }
 
 func isModifierKey(vk uint) bool {
@@ -960,11 +995,11 @@ func lowLevelKeyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	vk := uint(info.VKCode)
 	switch uint32(wParam) {
 	case wmKeyDown, wmSysKeyDown:
-		if appState.handleHookKeyDown(vk) {
+		if appState.handleHookKeyDown(vk, info.Time) {
 			return 1
 		}
 	case wmKeyUp, wmSysKeyUp:
-		if appState.handleHookKeyUp(vk) {
+		if appState.handleHookKeyUp(vk, info.Time) {
 			return 1
 		}
 	}
