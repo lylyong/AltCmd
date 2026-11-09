@@ -1,29 +1,93 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 )
 
-func TestConfigShowConsoleDefaultsToTrue(t *testing.T) {
+func TestConfigDefaultsAutoStartOnAndConsoleOff(t *testing.T) {
 	var cfg config
 	if err := json.Unmarshal([]byte(`{"auto_start":false}`), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ShowConsole {
-		t.Fatal("show_console should default to true when omitted")
+	if cfg.ShowConsole {
+		t.Fatal("show_console should default to false when omitted")
+	}
+	if cfg.AutoStart {
+		t.Fatal("an explicit auto_start=false should be respected")
 	}
 }
 
-func TestConfigShowConsoleCanBeDisabled(t *testing.T) {
+func TestConfigAutoStartDefaultsToTrue(t *testing.T) {
 	var cfg config
-	if err := json.Unmarshal([]byte(`{"show_console":false}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{}`), &cfg); err != nil {
 		t.Fatal(err)
 	}
+	if !cfg.AutoStart {
+		t.Fatal("auto_start should default to true when omitted")
+	}
+}
+
+func TestConfigShowConsoleCanBeEnabled(t *testing.T) {
+	var cfg config
+	if err := json.Unmarshal([]byte(`{"show_console":true}`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ShowConsole {
+		t.Fatal("show_console should respect an explicit true value")
+	}
+}
+
+func TestDefaultConfigEnablesAutoStartAndHidesConsole(t *testing.T) {
+	cfg := defaultConfig()
+	if !cfg.AutoStart {
+		t.Fatal("new installations should enable auto-start")
+	}
 	if cfg.ShowConsole {
-		t.Fatal("show_console should respect an explicit false value")
+		t.Fatal("new installations should hide the trace console")
+	}
+}
+
+func TestInstalledExecutablePath(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\test\AppData\Local`)
+	got, err := installedExecutablePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `C:\Users\test\AppData\Local\Programs\AltCmd\AltCmd.exe`
+	if got != want {
+		t.Fatalf("installedExecutablePath() = %q, want %q", got, want)
+	}
+}
+
+func TestCopyExecutableReplacesTarget(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.exe")
+	target := filepath.Join(dir, "install", "AltCmd.exe")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("new executable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("old executable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyExecutable(source, target); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte("new executable")) {
+		t.Fatalf("installed executable = %q, want %q", got, "new executable")
 	}
 }
 

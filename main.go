@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -21,6 +23,8 @@ import (
 )
 
 const (
+	applicationVersion = "1.0.0"
+
 	wmHotkey  = 0x0312
 	wmCommand = 0x0111
 	wmDestroy = 0x0002
@@ -202,7 +206,7 @@ type config struct {
 
 func (cfg *config) UnmarshalJSON(data []byte) error {
 	type configAlias config
-	decoded := configAlias{ShowConsole: true}
+	decoded := configAlias{AutoStart: true}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
@@ -312,6 +316,11 @@ type kbdllhookstruct struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(applicationVersion)
+		return
+	}
+
 	if isTraceConsoleInvocation(os.Args) {
 		if err := runTraceConsole(os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -328,6 +337,13 @@ func main() {
 	configPath, cfg, err := loadOrCreateConfig()
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
+	}
+	installed, err := installAndLaunch(configPath, &cfg)
+	if err != nil {
+		log.Fatalf("install AltCmd failed: %v", err)
+	}
+	if installed {
+		return
 	}
 
 	a := &app{
@@ -368,7 +384,7 @@ func main() {
 	}
 	defer a.uninstallKeyboardHook()
 
-	log.Println("AltCmd running in tray")
+	log.Printf("AltCmd %s running in tray", applicationVersion)
 	log.Printf("config path: %s", configPath)
 
 	sigCh := make(chan os.Signal, 1)
@@ -422,11 +438,87 @@ func defaultConfigPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
+func installedExecutablePath() (string, error) {
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		return "", errors.New("LOCALAPPDATA is not set")
+	}
+	return filepath.Join(localAppData, "Programs", "AltCmd", "AltCmd.exe"), nil
+}
+
+func installAndLaunch(configPath string, cfg *config) (bool, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return false, fmt.Errorf("get current executable path failed: %w", err)
+	}
+	target, err := installedExecutablePath()
+	if err != nil {
+		return false, err
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		return false, fmt.Errorf("resolve current executable path failed: %w", err)
+	}
+	target, err = filepath.Abs(target)
+	if err != nil {
+		return false, fmt.Errorf("resolve install path failed: %w", err)
+	}
+	if strings.EqualFold(filepath.Clean(executable), filepath.Clean(target)) {
+		return false, nil
+	}
+
+	if err := copyExecutable(executable, target); err != nil {
+		return false, err
+	}
+	cfg.AutoStart = true
+	if err := saveConfig(configPath, *cfg); err != nil {
+		return false, fmt.Errorf("enable auto-start in configuration failed: %w", err)
+	}
+	if err := setAutoStart(true, target); err != nil {
+		return false, fmt.Errorf("configure auto-start failed: %w", err)
+	}
+	cmd := exec.Command(target)
+	if err := cmd.Start(); err != nil {
+		return false, fmt.Errorf("launch installed AltCmd failed: %w", err)
+	}
+	return true, nil
+}
+
+func copyExecutable(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("create install directory failed: %w", err)
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("open current executable failed: %w", err)
+	}
+	defer input.Close()
+
+	output, err := os.CreateTemp(filepath.Dir(target), "AltCmd-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create staged executable failed: %w", err)
+	}
+	tempPath := output.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := io.Copy(output, input); err != nil {
+		output.Close()
+		return fmt.Errorf("copy executable failed: %w", err)
+	}
+	if err := output.Close(); err != nil {
+		return fmt.Errorf("close staged executable failed: %w", err)
+	}
+	if err := os.Rename(tempPath, target); err != nil {
+		return fmt.Errorf("move executable into install directory failed: %w", err)
+	}
+	return nil
+}
+
 func defaultConfig() config {
 	return config{
 		GameModeEnabled: false,
-		AutoStart:       false,
-		ShowConsole:     true,
+		AutoStart:       true,
+		ShowConsole:     false,
 		GameProcesses: []string{
 			"valorant.exe",
 			"league of legends.exe",
@@ -695,6 +787,18 @@ func (a *app) handleMenuCommand(id int) {
 }
 
 func applyAutoStart(enabled bool) error {
+	executable := ""
+	if enabled {
+		var err error
+		executable, err = os.Executable()
+		if err != nil {
+			return err
+		}
+	}
+	return setAutoStart(enabled, executable)
+}
+
+func setAutoStart(enabled bool, executable string) error {
 	key, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
 		return err
@@ -710,12 +814,11 @@ func applyAutoStart(enabled bool) error {
 		return nil
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	if executable == "" {
+		return errors.New("executable path is required to enable auto-start")
 	}
-	exe = filepath.Clean(exe)
-	value := fmt.Sprintf("\"%s\"", exe)
+	executable = filepath.Clean(executable)
+	value := fmt.Sprintf("\"%s\"", executable)
 	return key.SetStringValue(valueName, value)
 }
 

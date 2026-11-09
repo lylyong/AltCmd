@@ -4,6 +4,8 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
+Current version: **1.0.0**
+
 ## Features
 
 - **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, or exit.
@@ -32,19 +34,23 @@ go mod tidy
 go run .
 ```
 
-AltCmd runs in the system tray; the console is used for logs. The tray menu's **Show trace console** option displays or hides the log window and is enabled by default. This setting is saved in the user configuration. If AltCmd was launched from an existing terminal, hiding the trace console only detaches AltCmd from that terminal; it does not hide or close the terminal window.
+AltCmd runs in the system tray; the console is used for logs. The tray menu's **Show trace console** option displays or hides the log window and is disabled by default. This setting is saved in the user configuration. If AltCmd was launched from an existing terminal, hiding the trace console only detaches AltCmd from that terminal; it does not hide or close the terminal window.
 
 The trace console runs in a separate process. Closing its window does not exit AltCmd. You can also close or reopen it from the tray menu. Logs are written to `AltCmd.log` in the user configuration directory.
 
 ## Build
 
 ```powershell
-go build -o AltCmd.exe .
+go build -o AltCmd-1.0.0.exe .
 ```
+
+Run `.\AltCmd-1.0.0.exe --version` to display the version. Windows file properties also show `1.0.0.0`.
 
 ## Install and run at sign-in
 
-Run this script from the project directory in Windows PowerShell:
+Run `AltCmd-1.0.0.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
+
+Alternatively, run this script from the project directory in Windows PowerShell:
 
 ```powershell
 .\deploy.ps1
@@ -77,8 +83,8 @@ The file is created automatically on first launch. Example:
 ```json
 {
 	"game_mode_enabled": false,
-	"auto_start": false,
-	"show_console": true,
+	"auto_start": true,
+	"show_console": false,
 	"game_processes": [
 		"valorant.exe",
 		"cs2.exe"
