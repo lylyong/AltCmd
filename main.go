@@ -184,6 +184,7 @@ type app struct {
 	altDownVK            uint
 	altComboHandled      bool
 	syntheticAltInjected bool
+	sendImmediate        func(...input) bool
 	nextHotkeyID         int
 	hookHandle           windows.Handle
 	settingsHwnd         windows.Handle
@@ -1006,11 +1007,17 @@ func (a *app) handleHookKeyDown(vk uint) bool {
 // handleHookKeyUp processes key-up events from the low-level keyboard hook.
 // CRITICAL: Zero allocations.
 func (a *app) handleHookKeyUp(vk uint) bool {
-	// Always swallow real Alt key-up to prevent menu activation.
+	// Swallow real Alt key-up; replay a complete tap only when no combo used it.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
 		if a.syntheticAltInjected {
-			sendSequenceImmediate(keyEvent(uint16(vk), false))
+			a.sendHookInput(keyEvent(uint16(vk), false))
 			a.syntheticAltInjected = false
+		} else if a.altDownPending && !a.altComboHandled {
+			altVK := a.altDownVK
+			if altVK == 0 {
+				altVK = vk
+			}
+			a.sendHookInput(keyEvent(uint16(altVK), true), keyEvent(uint16(altVK), false))
 		}
 		a.altDownPending = false
 		a.altDownVK = 0
@@ -1036,9 +1043,16 @@ func (a *app) flushPendingAlt() {
 	if a.altDownVK != 0 {
 		vk = uint16(a.altDownVK)
 	}
-	a.syntheticAltInjected = sendSequenceImmediate(keyEvent(vk, true))
+	a.syntheticAltInjected = a.sendHookInput(keyEvent(vk, true))
 	a.altDownPending = false
 	a.altDownVK = 0
+}
+
+func (a *app) sendHookInput(seq ...input) bool {
+	if a.sendImmediate != nil {
+		return a.sendImmediate(seq...)
+	}
+	return sendSequenceImmediate(seq...)
 }
 
 func (a *app) cancelPendingAltCombo() {

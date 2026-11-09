@@ -220,10 +220,43 @@ func TestNewAltPressClearsAbandonedChord(t *testing.T) {
 	}
 }
 
-func TestAltKeyUpDoesNotLeakMappedKeyRelease(t *testing.T) {
+func TestStandaloneAltPressReplaysAltTapOnKeyUp(t *testing.T) {
+	var sent []input
 	a := &app{
 		altDownPending: true,
-		pendingByKey:   [256]int{'Z': 9},
+		altDownVK:      vkLMenu,
+		sendImmediate: func(seq ...input) bool {
+			sent = append(sent, seq...)
+			return true
+		},
+	}
+
+	if !a.handleHookKeyUp(vkLMenu) {
+		t.Fatal("standalone Alt key-up should be swallowed after replay")
+	}
+	if len(sent) != 2 {
+		t.Fatalf("sent %d input events, want Alt key-down and key-up", len(sent))
+	}
+	if sent[0].Ki.WVK != uint16(vkLMenu) || sent[0].Ki.DwFlags != 0 {
+		t.Fatalf("first input = %#v, want left Alt key-down", sent[0])
+	}
+	if sent[1].Ki.WVK != uint16(vkLMenu) || sent[1].Ki.DwFlags != keyeventfKeyup {
+		t.Fatalf("second input = %#v, want left Alt key-up", sent[1])
+	}
+	if a.altDownPending || a.altDownVK != 0 {
+		t.Fatal("Alt state should be cleared after key-up")
+	}
+}
+
+func TestAltKeyUpDoesNotLeakMappedKeyRelease(t *testing.T) {
+	a := &app{
+		altDownPending:  true,
+		pendingByKey:    [256]int{'Z': 9},
+		altComboHandled: true,
+		sendImmediate: func(...input) bool {
+			t.Fatal("a handled Alt combo must not replay Alt")
+			return false
+		},
 	}
 
 	if !a.handleHookKeyUp(vkLMenu) {
