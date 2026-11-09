@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	applicationVersion = "1.0.0"
+	applicationVersion = "1.0.1"
 
 	wmHotkey  = 0x0312
 	wmCommand = 0x0111

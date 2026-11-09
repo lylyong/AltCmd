@@ -4,7 +4,7 @@
 
 AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 Alt 组合映射到常见开发动作。
 
-当前版本：**1.0.0**
+当前版本：**1.0.1**
 
 ## 已实现能力
 
@@ -41,14 +41,14 @@ go run .
 ## 构建
 
 ```powershell
-go build -o AltCmd-1.0.0.exe .
+go build -ldflags "-H=windowsgui" -o AltCmd-1.0.1.exe .
 ```
 
-可运行 `.\AltCmd-1.0.0.exe --version` 查看版本。Windows 文件属性中也会显示 `1.0.0.0`。
+构建使用 Windows GUI 子系统，启动时不会弹出控制台窗口；追踪终端仅在托盘菜单中手动开启时显示。可运行 `.\AltCmd-1.0.1.exe --version` 查看版本。Windows 文件属性中也会显示 `1.0.1.0`。
 
 ## 部署与开机启动
 
-直接运行 `AltCmd-1.0.0.exe` 即可完成部署，无需 Go 或部署脚本：程序会在首次启动时生成用户配置，将自身安装到 `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`，开启当前用户登录时自启动并启动已安装的程序。默认配置启用自启动；可通过托盘菜单关闭。追踪终端默认隐藏。
+直接运行 `AltCmd-1.0.1.exe` 即可完成部署，无需 Go 或部署脚本：程序会在首次启动时生成用户配置，将自身安装到 `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`，开启当前用户登录时自启动并启动已安装的程序。默认配置启用自启动；可通过托盘菜单关闭。追踪终端默认隐藏。
 
 也可以在 Windows PowerShell 中从项目目录运行部署脚本：
 
