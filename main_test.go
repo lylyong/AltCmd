@@ -43,6 +43,31 @@ func TestConfigShowConsoleCanBeEnabled(t *testing.T) {
 	}
 }
 
+func TestSaveConfigPersistsHotkeyEnabledState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := config{
+		Hotkeys: []hotkeyConfig{
+			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
+			{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: false},
+		},
+	}
+	if err := saveConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved config
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Hotkeys) != 2 || !saved.Hotkeys[0].Enabled || saved.Hotkeys[1].Enabled {
+		t.Fatalf("saved hotkey enabled states = %#v, want [true false]", saved.Hotkeys)
+	}
+}
+
 func TestDefaultConfigEnablesAutoStartAndHidesConsole(t *testing.T) {
 	cfg := defaultConfig()
 	if !cfg.AutoStart {
@@ -88,6 +113,29 @@ func TestCopyExecutableReplacesTarget(t *testing.T) {
 	}
 	if !bytes.Equal(got, []byte("new executable")) {
 		t.Fatalf("installed executable = %q, want %q", got, "new executable")
+	}
+}
+
+func TestRegisterHotkeysOnlyRegistersEnabledEntries(t *testing.T) {
+	a := &app{
+		cfg: config{
+			Hotkeys: []hotkeyConfig{
+				{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: false},
+				{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: true},
+			},
+		},
+	}
+
+	a.registerHotkeys()
+	if len(a.registeredByID) != 1 || a.altComboTable['C'] != 0 || a.altComboTable['V'] == 0 {
+		t.Fatalf("registered hotkeys = %#v, Alt+C=%d, Alt+V=%d; want only Alt+V", a.registeredByID, a.altComboTable['C'], a.altComboTable['V'])
+	}
+
+	a.cfg.Hotkeys[0].Enabled = true
+	a.cfg.Hotkeys[1].Enabled = false
+	a.registerHotkeys()
+	if len(a.registeredByID) != 1 || a.altComboTable['C'] == 0 || a.altComboTable['V'] != 0 {
+		t.Fatalf("after toggling, registered hotkeys = %#v, Alt+C=%d, Alt+V=%d; want only Alt+C", a.registeredByID, a.altComboTable['C'], a.altComboTable['V'])
 	}
 }
 

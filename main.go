@@ -225,6 +225,7 @@ type registeredHotkey struct {
 	ID         int
 	Modifiers  uint
 	Key        uint
+	Enabled    bool
 	ActionName string
 	Label      string
 }
@@ -871,6 +872,7 @@ func (a *app) registerHotkeys() {
 			ID:         id,
 			Modifiers:  mods,
 			Key:        key,
+			Enabled:    item.Enabled,
 			ActionName: act,
 			Label:      fmt.Sprintf("%s -> %s", item.Combo, act),
 		}
@@ -915,7 +917,7 @@ func (a *app) uninstallKeyboardHook() {
 
 func (a *app) handleHotkeyID(id int) {
 	hk, ok := a.registeredByID[id]
-	if !ok {
+	if !ok || !hk.Enabled {
 		return
 	}
 

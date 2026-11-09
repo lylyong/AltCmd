@@ -9,7 +9,7 @@ Current version: **1.0.2**
 ## Features
 
 - **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, view About information, or exit.
-- **Shortcut settings UI:** View, add, edit, enable or disable, and remove shortcuts. Changes take effect when saved. The UI uses built-in Windows controls and has no additional GUI dependencies. Supported on Windows 10 and 11.
+- **Shortcut settings UI:** View, edit, enable or disable, and remove existing shortcuts. Changes take effect when saved. The UI uses built-in Windows controls and has no additional GUI dependencies. Supported on Windows 10 and 11.
 - **Game mode:** When enabled, shortcut actions are suspended while a process on the configured game list is in the foreground. Add a game's `.exe` from the shortcut settings window to add its process name and automatically enable game mode.
 - **JSON configuration:** Customize shortcut combinations and actions in a JSON configuration file.
 - **Run at sign-in:** Configure startup behavior in the settings file or toggle it from the tray menu.
@@ -123,7 +123,7 @@ Examples of `combo` values:
 - `Alt+F4`
 - `Alt+BACKTICK`
 
-The shortcut settings window currently accepts only `Alt+key` combinations. Select **Probe conflicts** to check for conflicts with Windows registered global hotkeys and mark results in the list. Windows does not provide an API to identify which process registered a hotkey. The probe also cannot detect shortcuts handled internally by applications or conflicts with other low-level keyboard hooks. An unavailable probe result does not necessarily mean that a shortcut is invalid or in conflict.
+The shortcut settings window currently accepts only `Alt+key` combinations and can only edit or remove existing shortcuts; it does not add shortcuts. `enabled` is a mutually exclusive Boolean state: `true` enables a shortcut and `false` disables it. Disabled shortcuts are not registered or executed. Select **Probe conflicts** to check for conflicts with Windows registered global hotkeys and mark results in the list. Windows does not provide an API to identify which process registered a hotkey. The probe also cannot detect shortcuts handled internally by applications or conflicts with other low-level keyboard hooks. An unavailable probe result does not necessarily mean that a shortcut is invalid or in conflict.
 
 After editing the JSON file manually, select **Reload configuration** from the tray menu to apply the changes. In the settings window, select **Save and apply** to save and apply changes immediately.
 
