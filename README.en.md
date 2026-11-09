@@ -136,3 +136,7 @@ Select **Add game executable...** in the shortcut settings window and choose a g
 - Some applications do not support `WM_COPY` or `WM_PASTE`; AltCmd falls back to keyboard input.
 - In terminal windows, the `Ctrl+C` copy fallback may trigger an interrupt.
 - Sending keystrokes to an elevated window may require running AltCmd as administrator.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
