@@ -753,7 +753,7 @@ func showSettingsMessage(hwnd windows.Handle, text string, isError bool) {
 
 func showAboutDialog(hwnd windows.Handle) error {
 	message, err := windows.UTF16PtrFromString(fmt.Sprintf(
-		"AltCmd %s\nWindows 常驻托盘快捷键工具\n\nhttps://github.com/lylyong/AltCmd",
+		"AltCmd %s\nWindows 常驻托盘快捷键工具\nQQ群：1102396065\n\nhttps://github.com/lylyong/AltCmd",
 		applicationVersion,
 	))
 	if err != nil {
