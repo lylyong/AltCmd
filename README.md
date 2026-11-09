@@ -4,7 +4,7 @@
 
 AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 Alt 组合映射到常见开发动作。
 
-当前版本：**1.1.0**
+当前版本：**1.1.1**
 
 ## 已实现能力
 
@@ -42,14 +42,14 @@ go run .
 ## 构建
 
 ```powershell
-go build -ldflags "-H=windowsgui" -o AltCmd-1.1.0.exe .
+.\build.ps1
 ```
 
-构建使用 Windows GUI 子系统，启动时不会弹出控制台窗口；追踪终端仅在托盘菜单中手动开启时显示。可运行 `.\AltCmd-1.1.0.exe --version` 查看版本。Windows 文件属性中也会显示 `1.1.0.0`。
+构建使用 Windows GUI 子系统，启动时不会弹出控制台窗口；追踪终端仅在托盘菜单中手动开启时显示。脚本读取 `VERSION`，自动生成程序和 Windows 文件属性所需的版本信息，并输出 `AltCmd-<VERSION>.exe`。首次构建会下载固定版本的 Windows 资源生成工具。也可通过 `.\build.ps1 -OutputPath "$env:TEMP\AltCmd.exe"` 指定输出位置。
 
 ## 部署与开机启动
 
-直接运行 `AltCmd-1.1.0.exe` 即可完成部署，无需 Go 或部署脚本：程序会在首次启动时生成用户配置，将自身安装到 `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`，开启当前用户登录时自启动并启动已安装的程序。默认配置启用自启动；可通过托盘菜单关闭。追踪终端默认隐藏。
+直接运行 `AltCmd-<VERSION>.exe` 即可完成部署，无需 Go 或部署脚本：程序会在首次启动时生成用户配置，将自身安装到 `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`，开启当前用户登录时自启动并启动已安装的程序。默认配置启用自启动；可通过托盘菜单关闭。追踪终端默认隐藏。
 
 也可以在 Windows PowerShell 中从项目目录运行部署脚本：
 
@@ -60,7 +60,8 @@ go build -ldflags "-H=windowsgui" -o AltCmd-1.1.0.exe .
 脚本会检测 Windows 版本和 Go 版本，构建程序并安装到当前用户的 `%LOCALAPPDATA%\Programs\AltCmd`，设置当前用户登录时启动，并立即运行程序。
 重新部署时，脚本会先关闭从该安装路径运行的 AltCmd，再替换并启动新版本；从其他路径运行的实例不会被关闭。卸载时也会先关闭安装目录中的实例。
 
-- **构建时**：运行脚本的电脑需要安装 Go 1.23 或更高版本；脚本会检查 Go 版本。直接运行 `go build` 也需要 Go 工具链。
+- **构建时**：运行构建或部署脚本的电脑需要安装 Go 1.23 或更高版本；脚本会检查 Go 版本。首次构建需要网络连接以下载固定版本的 Windows 资源生成工具。
+
 - **运行时**：生成的 `AltCmd.exe` 是独立可执行文件，目标电脑不需要安装 Go。
 - **Windows 版本**：使用 Go 1.23 构建的程序，Go 官方支持的最低 Windows 版本是 Windows 10 / Windows Server 2016。脚本也因此只允许在这些版本及更新版本上部署。更早的 Windows 版本不在此工具链的支持范围内。
 

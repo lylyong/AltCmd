@@ -97,33 +97,14 @@ if ($osVersion.Major -lt 10) {
 	throw "AltCmd is built with Go 1.23 and requires Windows 10 / Windows Server 2016 or later."
 }
 
-$go = Get-Command "go" -ErrorAction Stop
-$goVersionOutput = & $go.Source version
-if ($LASTEXITCODE -ne 0) {
-	throw "Could not determine the Go version."
-}
-if ($goVersionOutput -notmatch '\bgo(\d+)\.(\d+)') {
-	throw "Could not parse Go version: $goVersionOutput"
-}
-$goMajor = [int]$Matches[1]
-$goMinor = [int]$Matches[2]
-if ($goMajor -lt 1 -or ($goMajor -eq 1 -and $goMinor -lt 23)) {
-	throw "Building AltCmd requires Go 1.23 or later. Found: $goVersionOutput"
-}
-
 $projectDir = $PSScriptRoot
 $buildOutput = Join-Path $env:TEMP ("AltCmd-build-{0}.exe" -f [guid]::NewGuid().ToString("N"))
 $stagedExe = Join-Path $installDir ("AltCmd-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
 
 try {
-	Push-Location $projectDir
-	try {
-		& $go.Source build -ldflags "-H=windowsgui" -buildvcs=false -o $buildOutput .
-		if ($LASTEXITCODE -ne 0) {
-			throw "Go build failed with exit code $LASTEXITCODE."
-		}
-	} finally {
-		Pop-Location
+	& (Join-Path $projectDir "build.ps1") -OutputPath $buildOutput
+	if (-not $?) {
+		throw "AltCmd build failed."
 	}
 
 	New-Item -ItemType Directory -Path $installDir -Force | Out-Null
@@ -136,7 +117,7 @@ try {
 	New-ItemProperty -Path $runKeyPath -Name "AltCmd" -Value ('"{0}"' -f $installExe) -PropertyType String -Force | Out-Null
 
 	Start-Process -FilePath $installExe
-	Write-Output "AltCmd built with $goVersionOutput, installed for the current user, configured to start at sign-in, and launched."
+	Write-Output "AltCmd installed for the current user, configured to start at sign-in, and launched."
 } finally {
 	foreach ($tempPath in @($buildOutput, $stagedExe)) {
 		if (Test-Path -LiteralPath $tempPath) {

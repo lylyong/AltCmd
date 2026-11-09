@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -40,6 +41,16 @@ func TestConfigShowConsoleCanBeEnabled(t *testing.T) {
 	}
 	if !cfg.ShowConsole {
 		t.Fatal("show_console should respect an explicit true value")
+	}
+}
+
+func TestApplicationVersionMatchesVersionFile(t *testing.T) {
+	raw, err := os.ReadFile("VERSION")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := applicationVersion, strings.TrimSpace(string(raw)); got != want {
+		t.Fatalf("application version = %q, want VERSION value %q", got, want)
 	}
 }
 
