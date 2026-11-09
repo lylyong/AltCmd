@@ -55,7 +55,6 @@ const (
 	settingsComboID  = 2002
 	settingsActionID = 2003
 	settingsEnableID = 2004
-	settingsAddID    = 2005
 	settingsUpdateID = 2006
 	settingsRemoveID = 2007
 	settingsProbeID  = 2008
@@ -96,6 +95,7 @@ var (
 		label string
 	}{
 		{hotkeyActionCopy, "复制"},
+		{hotkeyActionFind, "查找"},
 		{hotkeyActionPaste, "粘贴"},
 		{hotkeyActionCut, "剪切"},
 		{hotkeyActionUndo, "撤销"},
@@ -245,10 +245,7 @@ func (a *app) createSettingsControls() error {
 	if _, err = createSettingsControl("STATIC", "当前仅支持 Alt+按键；冲突探测不能识别占用软件名称。", wsChild|wsVisible, 325, 210, 330, 38, 0, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "新增", wsChild|wsVisible|wsTabStop, 325, 260, 95, 32, settingsAddID, 0); err != nil {
-		return err
-	}
-	if _, err = createSettingsControl("BUTTON", "更新选中项", wsChild|wsVisible|wsTabStop, 430, 260, 115, 32, settingsUpdateID, 0); err != nil {
+	if _, err = createSettingsControl("BUTTON", "更新选中项", wsChild|wsVisible|wsTabStop, 325, 260, 115, 32, settingsUpdateID, 0); err != nil {
 		return err
 	}
 	if _, err = createSettingsControl("BUTTON", "删除选中项", wsChild|wsVisible|wsTabStop, 325, 305, 125, 32, settingsRemoveID, 0); err != nil {
@@ -257,7 +254,7 @@ func (a *app) createSettingsControls() error {
 	if _, err = createSettingsControl("BUTTON", "探测冲突", wsChild|wsVisible|wsTabStop, 465, 305, 120, 32, settingsProbeID, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("STATIC", "添加或更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 365, 330, 40, 0, 0); err != nil {
+	if _, err = createSettingsControl("STATIC", "更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 365, 330, 40, 0, 0); err != nil {
 		return err
 	}
 	a.settingsGameStatus, err = createSettingsControl("STATIC", "", wsChild|wsVisible, 325, 410, 330, 36, 0, 0)
@@ -321,8 +318,6 @@ func settingsWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) ui
 		}
 		if notification == bnClicked {
 			switch controlID {
-			case settingsAddID:
-				appState.addSettingsEntry()
 			case settingsUpdateID:
 				appState.updateSettingsEntry()
 			case settingsRemoveID:
@@ -427,19 +422,6 @@ func (a *app) readSettingsEntry() (hotkeyConfig, error) {
 		Action:  settingsActions[actionIndex].value,
 		Enabled: enabled == bstChecked,
 	}, nil
-}
-
-func (a *app) addSettingsEntry() {
-	item, err := a.readSettingsEntry()
-	if err != nil {
-		showSettingsMessage(a.settingsHwnd, err.Error(), true)
-		return
-	}
-	a.settingsDraft = append(a.settingsDraft, item)
-	a.settingsConflicts = nil
-	a.settingsSelected = len(a.settingsDraft) - 1
-	a.refreshSettingsList()
-	a.loadSettingsSelection(a.settingsSelected)
 }
 
 func (a *app) updateSettingsEntry() {

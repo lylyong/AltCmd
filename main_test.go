@@ -43,6 +43,31 @@ func TestConfigShowConsoleCanBeEnabled(t *testing.T) {
 	}
 }
 
+func TestSaveConfigPersistsHotkeyEnabledState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := config{
+		Hotkeys: []hotkeyConfig{
+			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
+			{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: false},
+		},
+	}
+	if err := saveConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved config
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Hotkeys) != 2 || !saved.Hotkeys[0].Enabled || saved.Hotkeys[1].Enabled {
+		t.Fatalf("saved hotkey enabled states = %#v, want [true false]", saved.Hotkeys)
+	}
+}
+
 func TestDefaultConfigEnablesAutoStartAndHidesConsole(t *testing.T) {
 	cfg := defaultConfig()
 	if !cfg.AutoStart {
@@ -50,6 +75,60 @@ func TestDefaultConfigEnablesAutoStartAndHidesConsole(t *testing.T) {
 	}
 	if cfg.ShowConsole {
 		t.Fatal("new installations should hide the trace console")
+	}
+}
+
+func TestDefaultConfigIncludesFindHotkey(t *testing.T) {
+	cfg := defaultConfig()
+	found := false
+	for _, item := range cfg.Hotkeys {
+		if item.Combo == "Alt+F" && item.Action == hotkeyActionFind && item.Enabled {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("default config should enable Alt+F to find")
+	}
+
+	a := &app{cfg: cfg}
+	a.registerHotkeys()
+	id := a.altComboTable['F']
+	if id == 0 || a.registeredByID[id].ActionName != hotkeyActionFind {
+		t.Fatalf("Alt+F registration = %#v, want find action", a.registeredByID[id])
+	}
+}
+
+func TestMigrateConfigAddsFindHotkeyOnce(t *testing.T) {
+	cfg := config{
+		Hotkeys: []hotkeyConfig{
+			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
+		},
+	}
+
+	if !migrateConfig(&cfg) {
+		t.Fatal("legacy config should be migrated")
+	}
+	if cfg.ConfigVersion != currentConfigVersion {
+		t.Fatalf("config version = %d, want %d", cfg.ConfigVersion, currentConfigVersion)
+	}
+	if len(cfg.Hotkeys) != 2 || cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+F", Action: hotkeyActionFind, Enabled: true}) {
+		t.Fatalf("migrated hotkeys = %#v, want existing hotkey and enabled Alt+F", cfg.Hotkeys)
+	}
+	if migrateConfig(&cfg) {
+		t.Fatal("an already migrated config should not be migrated again")
+	}
+}
+
+func TestMigrateConfigPreservesExistingAltFHotkey(t *testing.T) {
+	existing := hotkeyConfig{Combo: "alt+f", Action: hotkeyActionCopy, Enabled: false}
+	cfg := config{Hotkeys: []hotkeyConfig{existing}}
+
+	if !migrateConfig(&cfg) {
+		t.Fatal("legacy config version should be updated")
+	}
+	if len(cfg.Hotkeys) != 1 || cfg.Hotkeys[0] != existing {
+		t.Fatalf("migration changed existing Alt+F mapping: %#v", cfg.Hotkeys)
 	}
 }
 
@@ -88,6 +167,29 @@ func TestCopyExecutableReplacesTarget(t *testing.T) {
 	}
 	if !bytes.Equal(got, []byte("new executable")) {
 		t.Fatalf("installed executable = %q, want %q", got, "new executable")
+	}
+}
+
+func TestRegisterHotkeysOnlyRegistersEnabledEntries(t *testing.T) {
+	a := &app{
+		cfg: config{
+			Hotkeys: []hotkeyConfig{
+				{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: false},
+				{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: true},
+			},
+		},
+	}
+
+	a.registerHotkeys()
+	if len(a.registeredByID) != 1 || a.altComboTable['C'] != 0 || a.altComboTable['V'] == 0 {
+		t.Fatalf("registered hotkeys = %#v, Alt+C=%d, Alt+V=%d; want only Alt+V", a.registeredByID, a.altComboTable['C'], a.altComboTable['V'])
+	}
+
+	a.cfg.Hotkeys[0].Enabled = true
+	a.cfg.Hotkeys[1].Enabled = false
+	a.registerHotkeys()
+	if len(a.registeredByID) != 1 || a.altComboTable['C'] == 0 || a.altComboTable['V'] != 0 {
+		t.Fatalf("after toggling, registered hotkeys = %#v, Alt+C=%d, Alt+V=%d; want only Alt+C", a.registeredByID, a.altComboTable['C'], a.altComboTable['V'])
 	}
 }
 
@@ -172,10 +274,43 @@ func TestNewAltPressClearsAbandonedChord(t *testing.T) {
 	}
 }
 
-func TestAltKeyUpDoesNotLeakMappedKeyRelease(t *testing.T) {
+func TestStandaloneAltPressReplaysAltTapOnKeyUp(t *testing.T) {
+	var sent []input
 	a := &app{
 		altDownPending: true,
-		pendingByKey:   [256]int{'Z': 9},
+		altDownVK:      vkLMenu,
+		sendImmediate: func(seq ...input) bool {
+			sent = append(sent, seq...)
+			return true
+		},
+	}
+
+	if !a.handleHookKeyUp(vkLMenu) {
+		t.Fatal("standalone Alt key-up should be swallowed after replay")
+	}
+	if len(sent) != 2 {
+		t.Fatalf("sent %d input events, want Alt key-down and key-up", len(sent))
+	}
+	if sent[0].Ki.WVK != uint16(vkLMenu) || sent[0].Ki.DwFlags != 0 {
+		t.Fatalf("first input = %#v, want left Alt key-down", sent[0])
+	}
+	if sent[1].Ki.WVK != uint16(vkLMenu) || sent[1].Ki.DwFlags != keyeventfKeyup {
+		t.Fatalf("second input = %#v, want left Alt key-up", sent[1])
+	}
+	if a.altDownPending || a.altDownVK != 0 {
+		t.Fatal("Alt state should be cleared after key-up")
+	}
+}
+
+func TestAltKeyUpDoesNotLeakMappedKeyRelease(t *testing.T) {
+	a := &app{
+		altDownPending:  true,
+		pendingByKey:    [256]int{'Z': 9},
+		altComboHandled: true,
+		sendImmediate: func(...input) bool {
+			t.Fatal("a handled Alt combo must not replay Alt")
+			return false
+		},
 	}
 
 	if !a.handleHookKeyUp(vkLMenu) {
