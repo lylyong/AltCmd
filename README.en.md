@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.2.0**
+Current version: **1.2.1**
 
 ## Features
 
@@ -137,7 +137,7 @@ On first launch, older configurations are upgraded automatically: enabled `Alt+F
 
 After editing the JSON file manually, select **Reload configuration** from the tray menu to apply the changes. In the settings window, select **Save and apply** to save and apply changes immediately.
 
-Select **Add game executable...** in the shortcut settings window and choose a game's `.exe` to add its process name to the game list and enable game mode. When that game is in the foreground, Alt shortcut mappings are suspended. The list is saved in the user configuration.
+The shortcut settings window shows the current game process list and lets you add or remove entries. Adding a game automatically enables game mode. When a listed game is in the foreground, Alt shortcut mappings are suspended. The list is saved in the user configuration.
 
 `switch_window` cycles through top-level windows owned by the foreground application. It is similar to switching between windows within an application on macOS, but it is not a system-wide replacement for `Alt+Tab`.
 

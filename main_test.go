@@ -460,3 +460,21 @@ func TestAddGameProcessRejectsNonExecutable(t *testing.T) {
 		t.Fatal("non-executable file should not be added")
 	}
 }
+
+func TestRemoveGameProcess(t *testing.T) {
+	cfg := config{GameProcesses: []string{"first.exe", "second.exe", "third.exe"}}
+
+	removed, ok := removeGameProcess(&cfg, 1)
+	if !ok || removed != "second.exe" {
+		t.Fatalf("removeGameProcess() = (%q, %v), want (%q, true)", removed, ok, "second.exe")
+	}
+	if got, want := strings.Join(cfg.GameProcesses, ","), "first.exe,third.exe"; got != want {
+		t.Fatalf("remaining game processes = %q, want %q", got, want)
+	}
+
+	for _, index := range []int{-1, 2} {
+		if removed, ok := removeGameProcess(&cfg, index); ok {
+			t.Fatalf("removeGameProcess(index=%d) removed %q, want no removal", index, removed)
+		}
+	}
+}

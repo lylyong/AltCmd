@@ -51,20 +51,22 @@ const (
 	mbIconError       = 0x00000010
 	mbIconInformation = 0x00000040
 
-	settingsListID   = 2001
-	settingsComboID  = 2002
-	settingsActionID = 2003
-	settingsEnableID = 2004
-	settingsUpdateID = 2006
-	settingsRemoveID = 2007
-	settingsProbeID  = 2008
-	settingsSaveID   = 2009
-	settingsCancelID = 2010
+	settingsListID     = 2001
+	settingsComboID    = 2002
+	settingsActionID   = 2003
+	settingsEnableID   = 2004
+	settingsUpdateID   = 2006
+	settingsRemoveID   = 2007
+	settingsProbeID    = 2008
+	settingsSaveID     = 2009
+	settingsCancelID   = 2010
+	settingsGameListID = 2013
 
 	modNoRepeat = 0x4000
 
 	globalHotkeyProbeIDBase = 0x7000
 	settingsAddGameID       = 2011
+	settingsRemoveGameID    = 2012
 
 	ofnFileMustExist = 0x00001000
 	ofnPathMustExist = 0x00000800
@@ -255,23 +257,31 @@ func (a *app) createSettingsControls() error {
 	if _, err = createSettingsControl("BUTTON", "探测冲突", wsChild|wsVisible|wsTabStop, 465, 305, 120, 32, settingsProbeID, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("STATIC", "更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 365, 330, 40, 0, 0); err != nil {
+	if _, err = createSettingsControl("STATIC", "更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 350, 330, 38, 0, 0); err != nil {
 		return err
 	}
-	a.settingsGameStatus, err = createSettingsControl("STATIC", "", wsChild|wsVisible, 325, 410, 330, 36, 0, 0)
+	a.settingsGameStatus, err = createSettingsControl("STATIC", "", wsChild|wsVisible, 325, 390, 330, 22, 0, 0)
 	if err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "添加游戏程序...", wsChild|wsVisible|wsTabStop, 325, 450, 160, 32, settingsAddGameID, 0); err != nil {
+	a.settingsGameList, err = createSettingsControl("LISTBOX", "", wsChild|wsVisible|wsBorder|wsVScroll|wsHScroll|wsTabStop|lbsHasStrings, 325, 415, 330, 65, settingsGameListID, 0)
+	if err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "保存并应用", wsChild|wsVisible|wsTabStop, 435, 510, 115, 34, settingsSaveID, 0); err != nil {
+	if _, err = createSettingsControl("BUTTON", "添加游戏程序...", wsChild|wsVisible|wsTabStop, 325, 485, 145, 30, settingsAddGameID, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "取消", wsChild|wsVisible|wsTabStop, 565, 510, 90, 34, settingsCancelID, 0); err != nil {
+	if _, err = createSettingsControl("BUTTON", "删除选中游戏", wsChild|wsVisible|wsTabStop, 480, 485, 145, 30, settingsRemoveGameID, 0); err != nil {
+		return err
+	}
+	if _, err = createSettingsControl("BUTTON", "保存并应用", wsChild|wsVisible|wsTabStop, 435, 520, 115, 34, settingsSaveID, 0); err != nil {
+		return err
+	}
+	if _, err = createSettingsControl("BUTTON", "取消", wsChild|wsVisible|wsTabStop, 565, 520, 90, 34, settingsCancelID, 0); err != nil {
 		return err
 	}
 	a.updateGameStatus()
+	a.refreshGameProcessList()
 	return nil
 }
 
@@ -327,6 +337,8 @@ func settingsWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) ui
 				appState.probeSettingsConflicts()
 			case settingsAddGameID:
 				appState.addGameExecutable()
+			case settingsRemoveGameID:
+				appState.removeSelectedGameProcess()
 			case settingsSaveID:
 				appState.saveSettings()
 			case settingsCancelID:
@@ -341,6 +353,7 @@ func settingsWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) ui
 		if appState.settingsHwnd == windows.Handle(hwnd) {
 			appState.settingsHwnd = 0
 			appState.settingsList = 0
+			appState.settingsGameList = 0
 			appState.settingsCombo = 0
 			appState.settingsAction = 0
 			appState.settingsEnabled = 0
@@ -487,6 +500,7 @@ func (a *app) addGameExecutable() {
 	}
 
 	cfg := a.cfg
+	cfg.GameProcesses = append([]string(nil), a.cfg.GameProcesses...)
 	added, processName := addGameProcess(&cfg, path)
 	if !added && cfg.GameModeEnabled {
 		showSettingsMessage(a.settingsHwnd, processName+" 已在游戏名单中。", false)
@@ -500,6 +514,7 @@ func (a *app) addGameExecutable() {
 
 	a.cfg = cfg
 	a.updateGameStatus()
+	a.refreshGameProcessList()
 	if added {
 		showSettingsMessage(
 			a.settingsHwnd,
@@ -509,6 +524,27 @@ func (a *app) addGameExecutable() {
 	} else {
 		showSettingsMessage(a.settingsHwnd, "游戏模式已开启。", false)
 	}
+}
+
+func (a *app) removeSelectedGameProcess() {
+	selected, _, _ := procSendMessageW.Call(uintptr(a.settingsGameList), lbGetCurSel, 0, 0)
+	index := int(int32(selected))
+	cfg := a.cfg
+	cfg.GameProcesses = append([]string(nil), a.cfg.GameProcesses...)
+	processName, removed := removeGameProcess(&cfg, index)
+	if !removed {
+		showSettingsMessage(a.settingsHwnd, "请先选择要删除的游戏程序。", true)
+		return
+	}
+	if err := saveConfig(a.configPath, cfg); err != nil {
+		showSettingsMessage(a.settingsHwnd, "保存游戏名单失败：\n"+err.Error(), true)
+		return
+	}
+
+	a.cfg = cfg
+	a.updateGameStatus()
+	a.refreshGameProcessList()
+	showSettingsMessage(a.settingsHwnd, processName+" 已从游戏名单中删除。", false)
 }
 
 func selectGameExecutable(owner windows.Handle) (string, bool, error) {
@@ -561,6 +597,15 @@ func addGameProcess(cfg *config, executablePath string) (bool, string) {
 	return true, processName
 }
 
+func removeGameProcess(cfg *config, index int) (string, bool) {
+	if index < 0 || index >= len(cfg.GameProcesses) {
+		return "", false
+	}
+	processName := cfg.GameProcesses[index]
+	cfg.GameProcesses = append(cfg.GameProcesses[:index], cfg.GameProcesses[index+1:]...)
+	return processName, true
+}
+
 func (a *app) updateGameStatus() {
 	if a.settingsGameStatus == 0 {
 		return
@@ -570,6 +615,16 @@ func (a *app) updateGameStatus() {
 		fmt.Sprintf("游戏名单：%d 个；命中前台进程时自动暂停映射。", len(a.cfg.GameProcesses)),
 	); err != nil {
 		log.Printf("update game process status failed: %v", err)
+	}
+}
+
+func (a *app) refreshGameProcessList() {
+	if a.settingsGameList == 0 {
+		return
+	}
+	procSendMessageW.Call(uintptr(a.settingsGameList), lbResetContent, 0, 0)
+	for _, processName := range a.cfg.GameProcesses {
+		addSettingsString(a.settingsGameList, lbAddString, processName)
 	}
 }
 
