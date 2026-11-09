@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.1.1**
+Current version: **1.2.0**
 
 ## Features
 
@@ -19,6 +19,7 @@ Current version: **1.1.1**
 
 - `Alt+C` -> Copy: tries `WM_COPY` first, then falls back to `Ctrl+C`
 - `Alt+F` -> `Ctrl+F` (Find)
+- `Alt+R` -> `Ctrl+R` (Refresh/reload)
 - `Alt+V` -> Paste: tries `WM_PASTE` first, then falls back to `Ctrl+V`
 - `Alt+X` -> `Ctrl+X`
 - `Alt+Z` -> `Ctrl+Z`
@@ -113,6 +114,7 @@ Supported `action` values:
 
 - `copy`
 - `find`
+- `refresh`
 - `paste`
 - `cut`
 - `undo`
@@ -131,7 +133,7 @@ Examples of `combo` values:
 
 The shortcut settings window currently accepts only `Alt+key` combinations and can only edit or remove existing shortcuts; it does not add shortcuts. `enabled` is a mutually exclusive Boolean state: `true` enables a shortcut and `false` disables it. Disabled shortcuts are not registered or executed. Select **Probe conflicts** to check for conflicts with Windows registered global hotkeys and mark results in the list. Windows does not provide an API to identify which process registered a hotkey. The probe also cannot detect shortcuts handled internally by applications or conflicts with other low-level keyboard hooks. An unavailable probe result does not necessarily mean that a shortcut is invalid or in conflict.
 
-On first launch, older configurations are upgraded automatically: an enabled `Alt+F` find shortcut is added if no `Alt+F` mapping exists. An existing `Alt+F` mapping is preserved.
+On first launch, older configurations are upgraded automatically: enabled `Alt+F` and `Alt+R` shortcuts are added when no mappings exist. Existing mappings for either shortcut are preserved.
 
 After editing the JSON file manually, select **Reload configuration** from the tray menu to apply the changes. In the settings window, select **Save and apply** to save and apply changes immediately.
 

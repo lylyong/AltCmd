@@ -96,6 +96,7 @@ var (
 	}{
 		{hotkeyActionCopy, "复制"},
 		{hotkeyActionFind, "查找"},
+		{hotkeyActionRefresh, "刷新"},
 		{hotkeyActionPaste, "粘贴"},
 		{hotkeyActionCut, "剪切"},
 		{hotkeyActionUndo, "撤销"},

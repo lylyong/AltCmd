@@ -4,7 +4,7 @@
 
 AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 Alt 组合映射到常见开发动作。
 
-当前版本：**1.1.1**
+当前版本：**1.2.0**
 
 ## 已实现能力
 
@@ -18,6 +18,7 @@ AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 
 
 - `Alt+C` -> 复制：先尝试 `WM_COPY`，失败回退 `Ctrl+C`
 - `Alt+F` -> `Ctrl+F`（查找）
+- `Alt+R` -> `Ctrl+R`（刷新/重新加载）
 - `Alt+V` -> 粘贴：先尝试 `WM_PASTE`，失败回退 `Ctrl+V`
 - `Alt+X` -> `Ctrl+X`
 - `Alt+Z` -> `Ctrl+Z`
@@ -98,6 +99,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 	"hotkeys": [
 		{ "combo": "Alt+C", "action": "copy", "enabled": true },
 		{ "combo": "Alt+F", "action": "find", "enabled": true },
+		{ "combo": "Alt+R", "action": "refresh", "enabled": true },
 		{ "combo": "Alt+V", "action": "paste", "enabled": true },
 		{ "combo": "Alt+X", "action": "cut", "enabled": true },
 		{ "combo": "Alt+Z", "action": "undo", "enabled": true },
@@ -115,6 +117,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 
 - `copy`
 - `find`
+- `refresh`
 - `paste`
 - `cut`
 - `undo`
@@ -133,7 +136,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 
 快捷键设置窗口目前只接受 `Alt+按键` 组合，只能编辑或删除已有快捷键，不能新增快捷键。`enabled` 是互斥的布尔状态：`true` 表示启用，`false` 表示禁用；禁用的快捷键不会注册，也不会执行。点击“探测冲突”可检查 Windows 已注册的全局热键，并在列表中标出冲突项；Windows 不提供查询占用软件名称的接口，探测也无法发现应用内部快捷键或其他低层键盘钩子冲突。手动修改 JSON 后可用托盘菜单 `重载配置` 立即生效；在图形化设置窗口点击“保存并应用”则会保存并立即生效。
 
-旧版配置会在首次启动时自动升级：若尚未配置 `Alt+F`，程序会添加启用的查找快捷键；已有的 `Alt+F` 配置会保留。
+旧版配置会在首次启动时自动升级：若尚未配置 `Alt+F` 或 `Alt+R`，程序会分别添加查找或刷新快捷键；已有的对应快捷键配置会保留。
 
 点击快捷键设置窗口中的“添加游戏程序...”并选择游戏的 `.exe` 后，AltCmd 会将其进程名加入游戏名单并自动开启游戏模式。该游戏成为前台窗口时，Alt 快捷键映射会暂停；名单保存在用户配置中。
 
