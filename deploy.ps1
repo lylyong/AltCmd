@@ -94,7 +94,7 @@ $stagedExe = Join-Path $installDir ("AltCmd-{0}.tmp" -f [guid]::NewGuid().ToStri
 try {
 	Push-Location $projectDir
 	try {
-		& $go.Source build -buildvcs=false -o $buildOutput .
+		& $go.Source build -ldflags "-H=windowsgui" -buildvcs=false -o $buildOutput .
 		if ($LASTEXITCODE -ne 0) {
 			throw "Go build failed with exit code $LASTEXITCODE."
 		}
