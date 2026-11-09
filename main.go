@@ -23,8 +23,6 @@ import (
 )
 
 const (
-	applicationVersion = "1.1.0"
-
 	wmHotkey  = 0x0312
 	wmCommand = 0x0111
 	wmDestroy = 0x0002
@@ -128,6 +126,11 @@ const (
 
 	currentConfigVersion = 1
 )
+
+//go:embed VERSION
+var embeddedVersion string
+
+var applicationVersion = strings.TrimSpace(embeddedVersion)
 
 var (
 	user32   = windows.NewLazySystemDLL("user32.dll")
