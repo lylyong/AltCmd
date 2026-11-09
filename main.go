@@ -108,6 +108,7 @@ const (
 	idMenuExit           = 1004
 	idMenuSettings       = 1005
 	idMenuToggleConsole  = 1006
+	idMenuAbout          = 1007
 
 	trayUID = 1
 
@@ -700,6 +701,8 @@ func showTrayMenu(hwnd windows.Handle) {
 	appendMenu(menu, mfString, idMenuSettings, "快捷键设置...")
 	appendMenu(menu, mfString, idMenuReloadConfig, "重载配置")
 	appendMenu(menu, mfSeparator, 0, "")
+	appendMenu(menu, mfString, idMenuAbout, "关于 AltCmd...")
+	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, mfString, idMenuExit, "退出")
 
 	var pt point
@@ -781,6 +784,10 @@ func (a *app) handleMenuCommand(id int) {
 		}
 		a.registerHotkeys()
 		log.Printf("config reloaded")
+	case idMenuAbout:
+		if err := showAboutDialog(a.hwnd); err != nil {
+			log.Printf("show about dialog failed: %v", err)
+		}
 	case idMenuExit:
 		postMessage(a.hwnd, wmDestroy, 0, 0)
 	}

@@ -8,7 +8,7 @@ Current version: **1.0.1**
 
 ## Features
 
-- **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, or exit.
+- **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, view About information, or exit.
 - **Shortcut settings UI:** View, add, edit, enable or disable, and remove shortcuts. Changes take effect when saved. The UI uses built-in Windows controls and has no additional GUI dependencies. Supported on Windows 10 and 11.
 - **Game mode:** When enabled, shortcut actions are suspended while a process on the configured game list is in the foreground. Add a game's `.exe` from the shortcut settings window to add its process name and automatically enable game mode.
 - **JSON configuration:** Customize shortcut combinations and actions in a JSON configuration file.

@@ -750,3 +750,27 @@ func showSettingsMessage(hwnd windows.Handle, text string, isError bool) {
 	}
 	procMessageBoxW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(message)), uintptr(unsafe.Pointer(title)), mbOK|icon)
 }
+
+func showAboutDialog(hwnd windows.Handle) error {
+	message, err := windows.UTF16PtrFromString(fmt.Sprintf(
+		"AltCmd %s\nWindows 常驻托盘快捷键工具\n\nhttps://github.com/lylyong/AltCmd",
+		applicationVersion,
+	))
+	if err != nil {
+		return fmt.Errorf("format about message failed: %w", err)
+	}
+	title, err := windows.UTF16PtrFromString("关于 AltCmd")
+	if err != nil {
+		return fmt.Errorf("format about dialog title failed: %w", err)
+	}
+	result, _, callErr := procMessageBoxW.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(message)),
+		uintptr(unsafe.Pointer(title)),
+		mbOK|mbIconInformation,
+	)
+	if result == 0 {
+		return fmt.Errorf("MessageBoxW failed: %w", callErr)
+	}
+	return nil
+}
