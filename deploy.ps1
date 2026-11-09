@@ -55,7 +55,31 @@ function Remove-AltCmdAutoStart {
 	}
 }
 
+function Stop-InstalledAltCmd {
+	$expectedPath = [System.IO.Path]::GetFullPath($installExe)
+	$runningProcesses = Get-CimInstance -ClassName Win32_Process -Filter "Name = 'AltCmd.exe'" |
+		Where-Object {
+			$_.ExecutablePath -and [string]::Equals(
+				[System.IO.Path]::GetFullPath($_.ExecutablePath),
+				$expectedPath,
+				[System.StringComparison]::OrdinalIgnoreCase
+			)
+		}
+
+	foreach ($runningProcess in $runningProcesses) {
+		Stop-Process -Id $runningProcess.ProcessId -Force -ErrorAction Stop
+		Wait-Process -Id $runningProcess.ProcessId -Timeout 15 -ErrorAction SilentlyContinue
+
+		$stillRunning = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $($runningProcess.ProcessId)"
+		if ($stillRunning) {
+			throw "Could not stop the running AltCmd process (PID $($runningProcess.ProcessId))."
+		}
+		Write-Output "Stopped running AltCmd process (PID $($runningProcess.ProcessId))."
+	}
+}
+
 if ($Uninstall) {
+	Stop-InstalledAltCmd
 	Set-AltCmdAutoStart -Enabled $false
 	Remove-AltCmdAutoStart
 	if (Test-Path -LiteralPath $installExe) {
@@ -104,6 +128,7 @@ try {
 
 	New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 	Copy-Item -LiteralPath $buildOutput -Destination $stagedExe
+	Stop-InstalledAltCmd
 	Move-Item -LiteralPath $stagedExe -Destination $installExe -Force
 
 	Set-AltCmdAutoStart -Enabled $true

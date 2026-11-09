@@ -95,6 +95,7 @@ var (
 		label string
 	}{
 		{hotkeyActionCopy, "复制"},
+		{hotkeyActionFind, "查找"},
 		{hotkeyActionPaste, "粘贴"},
 		{hotkeyActionCut, "剪切"},
 		{hotkeyActionUndo, "撤销"},

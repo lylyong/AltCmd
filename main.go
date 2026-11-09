@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	applicationVersion = "1.0.2"
+	applicationVersion = "1.1.0"
 
 	wmHotkey  = 0x0312
 	wmCommand = 0x0111
@@ -124,6 +124,9 @@ const (
 	hotkeyActionCloseTab     = "close_tab"
 	hotkeyActionCloseWindow  = "close_window"
 	hotkeyActionSwitchWindow = "switch_window"
+	hotkeyActionFind         = "find"
+
+	currentConfigVersion = 1
 )
 
 var (
@@ -199,6 +202,7 @@ type app struct {
 }
 
 type config struct {
+	ConfigVersion   int            `json:"config_version"`
 	GameModeEnabled bool           `json:"game_mode_enabled"`
 	AutoStart       bool           `json:"auto_start"`
 	ShowConsole     bool           `json:"show_console"`
@@ -426,6 +430,11 @@ func loadOrCreateConfig() (string, config, error) {
 	}
 
 	normalizeConfig(&cfg)
+	if migrateConfig(&cfg) {
+		if err := saveConfig(path, cfg); err != nil {
+			return "", config{}, fmt.Errorf("migrate config failed: %w", err)
+		}
+	}
 	return path, cfg, nil
 }
 
@@ -519,6 +528,7 @@ func copyExecutable(source, target string) error {
 
 func defaultConfig() config {
 	return config{
+		ConfigVersion:   currentConfigVersion,
 		GameModeEnabled: false,
 		AutoStart:       true,
 		ShowConsole:     false,
@@ -532,6 +542,7 @@ func defaultConfig() config {
 		},
 		Hotkeys: []hotkeyConfig{
 			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
+			{Combo: "Alt+F", Action: hotkeyActionFind, Enabled: true},
 			{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: true},
 			{Combo: "Alt+X", Action: hotkeyActionCut, Enabled: true},
 			{Combo: "Alt+Z", Action: hotkeyActionUndo, Enabled: true},
@@ -543,6 +554,29 @@ func defaultConfig() config {
 			{Combo: "Alt+BACKTICK", Action: hotkeyActionSwitchWindow, Enabled: true},
 		},
 	}
+}
+
+func migrateConfig(cfg *config) bool {
+	if cfg.ConfigVersion >= currentConfigVersion {
+		return false
+	}
+
+	findMods, findKey, _ := parseCombo("Alt+F")
+	for _, item := range cfg.Hotkeys {
+		mods, key, err := parseCombo(item.Combo)
+		if err == nil && mods == findMods && key == findKey {
+			cfg.ConfigVersion = currentConfigVersion
+			return true
+		}
+	}
+
+	cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
+		Combo:   "Alt+F",
+		Action:  hotkeyActionFind,
+		Enabled: true,
+	})
+	cfg.ConfigVersion = currentConfigVersion
+	return true
 }
 
 func normalizeConfig(cfg *config) {
@@ -934,6 +968,8 @@ func (a *app) handleHotkeyID(id int) {
 	switch hk.ActionName {
 	case hotkeyActionCopy:
 		sendCtrlCombo('C')
+	case hotkeyActionFind:
+		sendCtrlCombo('F')
 	case hotkeyActionPaste:
 		sendCtrlCombo('V')
 	case hotkeyActionCut:
@@ -1113,7 +1149,7 @@ func callNextHook(nCode int, wParam uintptr, lParam uintptr) uintptr {
 
 func isSupportedAction(action string) bool {
 	switch action {
-	case hotkeyActionCopy, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
+	case hotkeyActionCopy, hotkeyActionFind, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
 		hotkeyActionSave, hotkeyActionSelectAll, hotkeyActionNewTab,
 		hotkeyActionCloseTab, hotkeyActionCloseWindow,
 		hotkeyActionSwitchWindow:

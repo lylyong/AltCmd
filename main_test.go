@@ -78,6 +78,60 @@ func TestDefaultConfigEnablesAutoStartAndHidesConsole(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigIncludesFindHotkey(t *testing.T) {
+	cfg := defaultConfig()
+	found := false
+	for _, item := range cfg.Hotkeys {
+		if item.Combo == "Alt+F" && item.Action == hotkeyActionFind && item.Enabled {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("default config should enable Alt+F to find")
+	}
+
+	a := &app{cfg: cfg}
+	a.registerHotkeys()
+	id := a.altComboTable['F']
+	if id == 0 || a.registeredByID[id].ActionName != hotkeyActionFind {
+		t.Fatalf("Alt+F registration = %#v, want find action", a.registeredByID[id])
+	}
+}
+
+func TestMigrateConfigAddsFindHotkeyOnce(t *testing.T) {
+	cfg := config{
+		Hotkeys: []hotkeyConfig{
+			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
+		},
+	}
+
+	if !migrateConfig(&cfg) {
+		t.Fatal("legacy config should be migrated")
+	}
+	if cfg.ConfigVersion != currentConfigVersion {
+		t.Fatalf("config version = %d, want %d", cfg.ConfigVersion, currentConfigVersion)
+	}
+	if len(cfg.Hotkeys) != 2 || cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+F", Action: hotkeyActionFind, Enabled: true}) {
+		t.Fatalf("migrated hotkeys = %#v, want existing hotkey and enabled Alt+F", cfg.Hotkeys)
+	}
+	if migrateConfig(&cfg) {
+		t.Fatal("an already migrated config should not be migrated again")
+	}
+}
+
+func TestMigrateConfigPreservesExistingAltFHotkey(t *testing.T) {
+	existing := hotkeyConfig{Combo: "alt+f", Action: hotkeyActionCopy, Enabled: false}
+	cfg := config{Hotkeys: []hotkeyConfig{existing}}
+
+	if !migrateConfig(&cfg) {
+		t.Fatal("legacy config version should be updated")
+	}
+	if len(cfg.Hotkeys) != 1 || cfg.Hotkeys[0] != existing {
+		t.Fatalf("migration changed existing Alt+F mapping: %#v", cfg.Hotkeys)
+	}
+}
+
 func TestInstalledExecutablePath(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\test\AppData\Local`)
 	got, err := installedExecutablePath()
