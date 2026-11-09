@@ -22,9 +22,10 @@ const (
 )
 
 var (
-	consoleKernel32     = windows.NewLazySystemDLL("kernel32.dll")
+	consoleKernel32      = windows.NewLazySystemDLL("kernel32.dll")
 	procGetConsoleWindow = consoleKernel32.NewProc("GetConsoleWindow")
 	procFreeConsole      = consoleKernel32.NewProc("FreeConsole")
+	procAllocConsole     = consoleKernel32.NewProc("AllocConsole")
 	consoleLogFile       *os.File
 	traceConsoleCmd      *exec.Cmd
 	traceConsoleDone     chan error
@@ -138,7 +139,15 @@ func stopTraceConsole() error {
 }
 
 func runTraceConsole(logPath string) error {
-	output, err := os.OpenFile("CONOUT$", os.O_APPEND|os.O_WRONLY, 0)
+	consoleWindow, _, _ := procGetConsoleWindow.Call()
+	if consoleWindow == 0 {
+		result, _, callErr := procAllocConsole.Call()
+		if result == 0 {
+			return fmt.Errorf("allocate trace console failed: %w", callErr)
+		}
+	}
+
+	output, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("open trace console output failed: %w", err)
 	}

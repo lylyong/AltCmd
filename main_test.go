@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"syscall"
 	"testing"
 )
 
@@ -23,6 +24,27 @@ func TestConfigShowConsoleCanBeDisabled(t *testing.T) {
 	}
 	if cfg.ShowConsole {
 		t.Fatal("show_console should respect an explicit false value")
+	}
+}
+
+func TestIsTraceConsoleInvocation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "trace console", args: []string{"AltCmd.exe", traceConsoleArg, "AltCmd.log"}, want: true},
+		{name: "normal startup", args: []string{"AltCmd.exe"}, want: false},
+		{name: "missing log path", args: []string{"AltCmd.exe", traceConsoleArg}, want: false},
+		{name: "other mode", args: []string{"AltCmd.exe", "--other", "AltCmd.log"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isTraceConsoleInvocation(tt.args); got != tt.want {
+				t.Fatalf("isTraceConsoleInvocation(%q) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -132,11 +154,17 @@ func TestInspectHotkeyConflictsReportsProbeErrors(t *testing.T) {
 			return false, errors.New("access denied")
 		},
 	)
-	if conflicts[0] != "探测失败" {
-		t.Fatalf("status = %q, want probe failure", conflicts[0])
+	if conflicts[0] != "无法探测" {
+		t.Fatalf("status = %q, want unavailable", conflicts[0])
 	}
-	if len(messages) != 1 {
-		t.Fatalf("got %d messages, want 1", len(messages))
+	if len(messages) != 1 || messages[0] != "Alt+C：暂时无法确认是否冲突" {
+		t.Fatalf("messages = %#v, want a friendly unavailable message", messages)
+	}
+}
+
+func TestHotkeyAlreadyRegisteredErrorIsRecognized(t *testing.T) {
+	if !isHotkeyAlreadyRegistered(syscall.Errno(1409)) {
+		t.Fatal("Windows hotkey-already-registered error should be recognized")
 	}
 }
 

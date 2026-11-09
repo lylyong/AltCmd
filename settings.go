@@ -33,23 +33,23 @@ const (
 	cbsHasStrings = 0x00000200
 	bsAutoCheck   = 0x00000003
 
-	lbAddString    = 0x0180
-	lbResetContent = 0x0184
-	lbSetCurSel    = 0x0186
-	lbGetCurSel    = 0x0188
-	cbAddString    = 0x0143
-	cbResetContent = 0x014B
-	cbSetCurSel    = 0x014E
-	cbGetCurSel    = 0x0147
-	bmGetCheck     = 0x00F0
-	bmSetCheck     = 0x00F1
-	bstChecked     = 1
-	bnClicked      = 0
-	lbnSelChange   = 1
-	swShow         = 5
-	mbOK           = 0x00000000
-	mbIconError    = 0x00000010
-	mbIconWarning  = 0x00000030
+	lbAddString       = 0x0180
+	lbResetContent    = 0x0184
+	lbSetCurSel       = 0x0186
+	lbGetCurSel       = 0x0188
+	cbAddString       = 0x0143
+	cbResetContent    = 0x014B
+	cbSetCurSel       = 0x014E
+	cbGetCurSel       = 0x0147
+	bmGetCheck        = 0x00F0
+	bmSetCheck        = 0x00F1
+	bstChecked        = 1
+	bnClicked         = 0
+	lbnSelChange      = 1
+	swShow            = 5
+	mbOK              = 0x00000000
+	mbIconError       = 0x00000010
+	mbIconInformation = 0x00000040
 
 	settingsListID   = 2001
 	settingsComboID  = 2002
@@ -474,7 +474,11 @@ func (a *app) removeSettingsEntry() {
 
 func (a *app) probeSettingsConflicts() {
 	conflicts, messages := inspectHotkeyConflicts(a.settingsDraft, func(index int, mods, key uint) (bool, error) {
-		return probeWindowsRegisteredHotkey(a.hwnd, globalHotkeyProbeIDBase+index, mods, key)
+		conflict, err := probeWindowsRegisteredHotkey(a.hwnd, globalHotkeyProbeIDBase+index, mods, key)
+		if err != nil {
+			log.Printf("probe global hotkey %s failed: %v", a.settingsDraft[index].Combo, err)
+		}
+		return conflict, err
 	})
 	a.settingsConflicts = conflicts
 	a.refreshSettingsList()
@@ -484,8 +488,8 @@ func (a *app) probeSettingsConflicts() {
 	}
 	showSettingsMessage(
 		a.settingsHwnd,
-		"探测结果：\n"+strings.Join(messages, "\n")+"\n\nWindows 不提供全局热键占用进程的查询接口，因此无法准确显示是哪个软件冲突。",
-		true,
+		"探测结果：\n"+strings.Join(messages, "\n")+"\n\n“无法探测”不代表配置错误或存在冲突。Windows 不提供全局热键占用进程的查询接口，因此无法显示具体占用软件。",
+		false,
 	)
 }
 
@@ -616,8 +620,8 @@ func inspectHotkeyConflicts(
 
 		conflict, err := probe(i, mods, key)
 		if err != nil {
-			results[i] = "探测失败"
-			messages = append(messages, fmt.Sprintf("%s：探测失败（%v）", item.Combo, err))
+			results[i] = "无法探测"
+			messages = append(messages, fmt.Sprintf("%s：暂时无法确认是否冲突", item.Combo))
 			continue
 		}
 		if conflict {
@@ -638,11 +642,10 @@ func probeWindowsRegisteredHotkey(hwnd windows.Handle, id int, mods, key uint) (
 		uintptr(key),
 	)
 	if result == 0 {
-		lastErr := windows.GetLastError()
-		if errors.Is(lastErr, windows.ERROR_HOTKEY_ALREADY_REGISTERED) {
+		if isHotkeyAlreadyRegistered(callErr) {
 			return true, nil
 		}
-		return false, fmt.Errorf("RegisterHotKey failed: %w (call error: %v)", lastErr, callErr)
+		return false, fmt.Errorf("RegisterHotKey failed: %w", callErr)
 	}
 
 	result, _, unregisterErr := procUnregisterHotKey.Call(uintptr(hwnd), uintptr(id))
@@ -650,6 +653,10 @@ func probeWindowsRegisteredHotkey(hwnd windows.Handle, id int, mods, key uint) (
 		return false, fmt.Errorf("UnregisterHotKey failed: %w", unregisterErr)
 	}
 	return false, nil
+}
+
+func isHotkeyAlreadyRegistered(err error) bool {
+	return errors.Is(err, windows.ERROR_HOTKEY_ALREADY_REGISTERED)
 }
 
 func (a *app) saveSettings() {
@@ -737,7 +744,7 @@ func showSettingsMessage(hwnd windows.Handle, text string, isError bool) {
 	if messageErr != nil || titleErr != nil {
 		return
 	}
-	icon := uintptr(mbIconWarning)
+	icon := uintptr(mbIconInformation)
 	if isError {
 		icon = mbIconError
 	}

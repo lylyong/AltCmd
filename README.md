@@ -1,5 +1,7 @@
 # AltCmd
 
+[简体中文](README.md) | [English](README.en.md)
+
 AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 Alt 组合映射到常见开发动作。
 
 ## 已实现能力
@@ -70,7 +72,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 
 `C:\Users\<用户名>\AppData\Roaming\AltCmd\config.json`
 
-程序首次启动会自动生成该文件。zzzzzz
+程序首次启动会自动生成该文件。
 
 示例：
 
