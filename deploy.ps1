@@ -4,6 +4,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\AltCmd"
+$versionPath = Join-Path $PSScriptRoot "VERSION"
+$version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+	throw "VERSION must contain a numeric major.minor.patch version, for example 1.2.3."
+}
 $installExe = Join-Path $installDir "AltCmd.exe"
 $configPath = Join-Path $env:APPDATA "AltCmd\config.json"
 $runKeyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
@@ -78,13 +83,23 @@ function Stop-InstalledAltCmd {
 	}
 }
 
+function Remove-InstalledAltCmdExecutables {
+	if (-not (Test-Path -LiteralPath $installDir)) {
+		return
+	}
+	if (Test-Path -LiteralPath $installExe) {
+		Remove-Item -LiteralPath $installExe -Force
+	}
+	Get-ChildItem -LiteralPath $installDir -File |
+		Where-Object { $_.Name -match '^AltCmd-\d+\.\d+\.\d+\.exe$' } |
+		Remove-Item -Force
+}
+
 if ($Uninstall) {
 	Stop-InstalledAltCmd
 	Set-AltCmdAutoStart -Enabled $false
 	Remove-AltCmdAutoStart
-	if (Test-Path -LiteralPath $installExe) {
-		Remove-Item -LiteralPath $installExe -Force
-	}
+	Remove-InstalledAltCmdExecutables
 	Write-Output "AltCmd startup entry and installed executable removed. User configuration was kept."
 	exit 0
 }
@@ -98,7 +113,7 @@ if ($osVersion.Major -lt 10) {
 }
 
 $projectDir = $PSScriptRoot
-$buildOutput = Join-Path $env:TEMP ("AltCmd-build-{0}.exe" -f [guid]::NewGuid().ToString("N"))
+$buildOutput = Join-Path $projectDir "AltCmd-$version.exe"
 $stagedExe = Join-Path $installDir ("AltCmd-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
 
 try {
@@ -111,6 +126,12 @@ try {
 	Copy-Item -LiteralPath $buildOutput -Destination $stagedExe
 	Stop-InstalledAltCmd
 	Move-Item -LiteralPath $stagedExe -Destination $installExe -Force
+	Get-ChildItem -LiteralPath $installDir -File |
+		Where-Object {
+			$_.Name -match '^AltCmd-\d+\.\d+\.\d+\.exe$' -and
+			-not [string]::Equals($_.FullName, $installExe, [System.StringComparison]::OrdinalIgnoreCase)
+		} |
+		Remove-Item -Force
 
 	Set-AltCmdAutoStart -Enabled $true
 	New-Item -Path $runKeyPath -Force | Out-Null
@@ -119,9 +140,7 @@ try {
 	Start-Process -FilePath $installExe
 	Write-Output "AltCmd installed for the current user, configured to start at sign-in, and launched."
 } finally {
-	foreach ($tempPath in @($buildOutput, $stagedExe)) {
-		if (Test-Path -LiteralPath $tempPath) {
-			Remove-Item -LiteralPath $tempPath -Force
-		}
+	if (Test-Path -LiteralPath $stagedExe) {
+		Remove-Item -LiteralPath $stagedExe -Force
 	}
 }

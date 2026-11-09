@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.2.1**
+Current version: **1.2.2**
 
 ## Features
 
@@ -51,7 +51,7 @@ The Windows GUI subsystem prevents a console window from appearing at startup. T
 
 ## Install and run at sign-in
 
-Run `AltCmd-<VERSION>.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
+Run `AltCmd-<VERSION>.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to the stable path `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
 
 Alternatively, run this script from the project directory in Windows PowerShell:
 
@@ -59,11 +59,11 @@ Alternatively, run this script from the project directory in Windows PowerShell:
 .\deploy.ps1
 ```
 
-The script checks the Windows and Go versions, builds AltCmd, installs it to `%LOCALAPPDATA%\Programs\AltCmd`, configures it to run when the current user signs in, and launches it.
+The script checks the Windows and Go versions, creates a versioned `AltCmd-<VERSION>.exe` in the project directory, then installs it as `AltCmd.exe` in `%LOCALAPPDATA%\Programs\AltCmd`, configures it to run when the current user signs in, and launches it.
 On redeployment, the script first closes an AltCmd instance running from that install path, then replaces and launches the new version. Instances running from other paths are left alone. Uninstalling also stops the installed instance first.
 
 - **Build requirements:** Go 1.23 or later must be installed on the build machine; the build and deployment scripts check the Go version. The first build requires an internet connection to download the pinned Windows resource generator.
-- **Runtime requirements:** The generated `AltCmd.exe` is self-contained; the target computer does not need Go installed.
+- **Runtime requirements:** The generated `AltCmd-<VERSION>.exe` is self-contained; the target computer does not need Go installed. The installed executable keeps the stable name `AltCmd.exe`.
 - **Windows support:** Go 1.23 officially supports Windows 10 / Windows Server 2016 and later. Accordingly, the deployment script only allows installation on these versions or later. Older Windows versions are outside the supported range of this toolchain.
 
 Not requiring Go at runtime does not mean AltCmd runs on every older Windows version. Runtime Windows support is still limited by the Go toolchain used to build it.

@@ -169,6 +169,7 @@ var (
 	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
 	procShellNotifyIconW    = shell32.NewProc("Shell_NotifyIconW")
+	procShellExecuteW       = shell32.NewProc("ShellExecuteW")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 
 	globalWndProc = windows.NewCallback(wndProc)
@@ -195,6 +196,7 @@ type app struct {
 	nextHotkeyID         int
 	hookHandle           windows.Handle
 	settingsHwnd         windows.Handle
+	aboutHwnd            windows.Handle
 	settingsList         windows.Handle
 	settingsGameList     windows.Handle
 	settingsCombo        windows.Handle

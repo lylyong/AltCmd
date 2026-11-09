@@ -61,6 +61,10 @@ const (
 	settingsSaveID     = 2009
 	settingsCancelID   = 2010
 	settingsGameListID = 2013
+	aboutJoinGroupID   = 3001
+	aboutCloseID       = 3002
+	aboutWindowWidth   = 420
+	aboutWindowHeight  = 230
 
 	modNoRepeat = 0x4000
 
@@ -92,6 +96,8 @@ var (
 	settingsWndProcCallback  = windows.NewCallback(settingsWindowProc)
 
 	settingsClassRegistered bool
+	aboutClassRegistered    bool
+	aboutWndProcCallback    = windows.NewCallback(aboutWindowProc)
 	settingsActions         = []struct {
 		value string
 		label string
@@ -790,25 +796,170 @@ func showSettingsMessage(hwnd windows.Handle, text string, isError bool) {
 }
 
 func showAboutDialog(hwnd windows.Handle) error {
-	message, err := windows.UTF16PtrFromString(fmt.Sprintf(
-		"AltCmd %s\nWindows 常驻托盘快捷键工具\nQQ群：1102396065\n\nhttps://github.com/lylyong/AltCmd",
-		applicationVersion,
-	))
+	if appState == nil {
+		return errors.New("application is not initialized")
+	}
+	if appState.aboutHwnd != 0 {
+		procShowWindow.Call(uintptr(appState.aboutHwnd), swShow)
+		procSetForegroundWindow.Call(uintptr(appState.aboutHwnd))
+		return nil
+	}
+	if err := registerAboutWindowClass(); err != nil {
+		return err
+	}
+
+	className, err := windows.UTF16PtrFromString("AltCmdAboutWindow")
 	if err != nil {
-		return fmt.Errorf("format about message failed: %w", err)
+		return fmt.Errorf("format about window class failed: %w", err)
 	}
 	title, err := windows.UTF16PtrFromString("关于 AltCmd")
 	if err != nil {
-		return fmt.Errorf("format about dialog title failed: %w", err)
+		return fmt.Errorf("format about window title failed: %w", err)
 	}
-	result, _, callErr := procMessageBoxW.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(message)),
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	window, _, callErr := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
-		mbOK|mbIconInformation,
+		wsCaption|wsSysMenu|wsVisible,
+		100, 100, aboutWindowWidth, aboutWindowHeight,
+		uintptr(hwnd), 0, hInstance, 0,
 	)
+	if window == 0 {
+		return fmt.Errorf("CreateWindowExW(about) failed: %w", callErr)
+	}
+	appState.aboutHwnd = windows.Handle(window)
+	if err := createAboutControls(appState.aboutHwnd); err != nil {
+		procDestroyWindow.Call(window)
+		return err
+	}
+	procSetForegroundWindow.Call(window)
+	return nil
+}
+
+func registerAboutWindowClass() error {
+	if aboutClassRegistered {
+		return nil
+	}
+	className, err := windows.UTF16PtrFromString("AltCmdAboutWindow")
+	if err != nil {
+		return fmt.Errorf("format about window class failed: %w", err)
+	}
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	wc := wndclassex{
+		CbSize:        uint32(unsafe.Sizeof(wndclassex{})),
+		LpfnWndProc:   aboutWndProcCallback,
+		HInstance:     windows.Handle(hInstance),
+		HIcon:         loadAppIconHandle(),
+		HIconSm:       loadAppIconHandle(),
+		HbrBackground: windows.Handle(6),
+		LpszClassName: className,
+	}
+	result, _, callErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 	if result == 0 {
-		return fmt.Errorf("MessageBoxW failed: %w", callErr)
+		const errClassAlreadyExists syscall.Errno = 1410
+		if !errors.Is(callErr, errClassAlreadyExists) {
+			return fmt.Errorf("RegisterClassExW(about) failed: %w", callErr)
+		}
+	}
+	aboutClassRegistered = true
+	return nil
+}
+
+func createAboutControls(parent windows.Handle) error {
+	title := fmt.Sprintf("AltCmd %s", applicationVersion)
+	if _, err := createAboutControl(parent, "STATIC", title, wsChild|wsVisible, 24, 24, 350, 28, 0); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "STATIC", "Windows 常驻托盘快捷键工具", wsChild|wsVisible, 24, 60, 350, 24, 0); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "BUTTON", "QQ群：1102396065（点击加入）", wsChild|wsVisible|wsTabStop, 24, 98, 250, 32, aboutJoinGroupID); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "STATIC", "https://github.com/lylyong/AltCmd", wsChild|wsVisible, 24, 148, 350, 24, 0); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "BUTTON", "关闭", wsChild|wsVisible|wsTabStop, 300, 148, 80, 30, aboutCloseID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createAboutControl(parent windows.Handle, className, text string, style uint32, x, y, width, height, id int) (windows.Handle, error) {
+	classPtr, err := windows.UTF16PtrFromString(className)
+	if err != nil {
+		return 0, fmt.Errorf("format about control class failed: %w", err)
+	}
+	textPtr, err := windows.UTF16PtrFromString(text)
+	if err != nil {
+		return 0, fmt.Errorf("format about control text failed: %w", err)
+	}
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	control, _, callErr := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(classPtr)),
+		uintptr(unsafe.Pointer(textPtr)),
+		uintptr(style),
+		uintptr(x), uintptr(y), uintptr(width), uintptr(height),
+		uintptr(parent), uintptr(id), hInstance, 0,
+	)
+	if control == 0 {
+		return 0, fmt.Errorf("create about %s control failed: %w", className, callErr)
+	}
+	return windows.Handle(control), nil
+}
+
+func aboutWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	if appState == nil {
+		return 0
+	}
+	switch message {
+	case wmCommand:
+		controlID := int(uint16(wParam & 0xFFFF))
+		notification := uint16((wParam >> 16) & 0xFFFF)
+		if notification == bnClicked {
+			switch controlID {
+			case aboutJoinGroupID:
+				if err := openQQGroup(hwnd); err != nil {
+					showSettingsMessage(windows.Handle(hwnd), "打开 QQ 群加入页面失败：\n"+err.Error(), true)
+				}
+			case aboutCloseID:
+				procDestroyWindow.Call(hwnd)
+			}
+		}
+		return 0
+	case wmClose:
+		procDestroyWindow.Call(hwnd)
+		return 0
+	case wmDestroy:
+		if appState.aboutHwnd == windows.Handle(hwnd) {
+			appState.aboutHwnd = 0
+		}
+		return 0
+	default:
+		result, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
+		return result
+	}
+}
+
+func openQQGroup(hwnd uintptr) error {
+	verb, err := windows.UTF16PtrFromString("open")
+	if err != nil {
+		return fmt.Errorf("format shell operation failed: %w", err)
+	}
+	link, err := windows.UTF16PtrFromString("tencent://AddGroup/?from=groupmessage&isappinstalled=0&groupcode=1102396065")
+	if err != nil {
+		return fmt.Errorf("format QQ group link failed: %w", err)
+	}
+	result, _, _ := procShellExecuteW.Call(
+		hwnd,
+		uintptr(unsafe.Pointer(verb)),
+		uintptr(unsafe.Pointer(link)),
+		0, 0, swShow,
+	)
+	if result <= 32 {
+		return fmt.Errorf("Windows could not open the QQ group link (ShellExecuteW result %d)", result)
 	}
 	return nil
 }
