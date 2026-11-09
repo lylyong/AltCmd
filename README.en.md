@@ -4,11 +4,11 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.0.1**
+Current version: **1.0.2**
 
 ## Features
 
-- **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, or exit.
+- **System tray:** Right-click the tray icon to configure shortcuts, toggle game mode and startup behavior, show or hide the trace console, reload configuration, view About information, or exit.
 - **Shortcut settings UI:** View, add, edit, enable or disable, and remove shortcuts. Changes take effect when saved. The UI uses built-in Windows controls and has no additional GUI dependencies. Supported on Windows 10 and 11.
 - **Game mode:** When enabled, shortcut actions are suspended while a process on the configured game list is in the foreground. Add a game's `.exe` from the shortcut settings window to add its process name and automatically enable game mode.
 - **JSON configuration:** Customize shortcut combinations and actions in a JSON configuration file.
@@ -41,14 +41,14 @@ The trace console runs in a separate process. Closing its window does not exit A
 ## Build
 
 ```powershell
-go build -ldflags "-H=windowsgui" -o AltCmd-1.0.1.exe .
+go build -ldflags "-H=windowsgui" -o AltCmd-1.0.2.exe .
 ```
 
-The Windows GUI subsystem prevents a console window from appearing at startup. The trace console is opened only when explicitly enabled from the tray menu. Run `.\AltCmd-1.0.1.exe --version` to display the version. Windows file properties also show `1.0.1.0`.
+The Windows GUI subsystem prevents a console window from appearing at startup. The trace console is opened only when explicitly enabled from the tray menu. Run `.\AltCmd-1.0.2.exe --version` to display the version. Windows file properties also show `1.0.2.0`.
 
 ## Install and run at sign-in
 
-Run `AltCmd-1.0.1.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
+Run `AltCmd-1.0.2.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
 
 Alternatively, run this script from the project directory in Windows PowerShell:
 
