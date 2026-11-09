@@ -24,7 +24,7 @@ const (
 	wmHotkey  = 0x0312
 	wmCommand = 0x0111
 	wmDestroy = 0x0002
-	wmTimer   = 0x0113
+	wmClose   = 0x0010
 	wmApp     = 0x8000
 	wmExecute = wmApp + 2
 
@@ -71,8 +71,6 @@ const (
 	vkF4       = 0x73
 	vkOem3     = 0xC0
 
-	keyStateDownMask     = 0x8000
-	altPendingTimeout    = 500
 	sendInputMaxAttempts = 3
 
 	processQueryLimited = 0x1000
@@ -104,12 +102,12 @@ const (
 	idMenuToggleStartup  = 1002
 	idMenuReloadConfig   = 1003
 	idMenuExit           = 1004
+	idMenuSettings       = 1005
+	idMenuToggleConsole  = 1006
 
 	trayUID = 1
 
 	wmTrayIcon = wmApp + 1
-
-	timerIDRehook = 1
 
 	hotkeyActionCopy         = "copy"
 	hotkeyActionPaste        = "paste"
@@ -141,7 +139,6 @@ var (
 	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
 	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
 	procSendInput           = user32.NewProc("SendInput")
-	procGetAsyncKeyState    = user32.NewProc("GetAsyncKeyState")
 	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
 	procSendMessageTimeoutW = user32.NewProc("SendMessageTimeoutW")
 	procGetClipboardSeqNo   = user32.NewProc("GetClipboardSequenceNumber")
@@ -159,8 +156,6 @@ var (
 	procTrackPopupMenu      = user32.NewProc("TrackPopupMenu")
 	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
-	procSetTimer            = user32.NewProc("SetTimer")
-	procKillTimer           = user32.NewProc("KillTimer")
 	procShellNotifyIconW    = shell32.NewProc("Shell_NotifyIconW")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 
@@ -180,21 +175,39 @@ type app struct {
 	registeredByID       map[int]registeredHotkey
 	altComboTable        [256]int // vk -> hotkey ID; for Alt+key combos (zero = not registered)
 	pendingByKey         [256]int // vk -> hotkey ID; tracks swallowed combo key-downs awaiting key-up
-	pendingExecuteID     int
 	altDownPending       bool
 	altDownVK            uint
-	altDownTick          uint32
 	altComboHandled      bool
 	syntheticAltInjected bool
 	nextHotkeyID         int
 	hookHandle           windows.Handle
+	settingsHwnd         windows.Handle
+	settingsList         windows.Handle
+	settingsCombo        windows.Handle
+	settingsAction       windows.Handle
+	settingsEnabled      windows.Handle
+	settingsDraft        []hotkeyConfig
+	settingsSelected     int
+	settingsConflicts    map[int]string
+	settingsGameStatus   windows.Handle
 }
 
 type config struct {
 	GameModeEnabled bool           `json:"game_mode_enabled"`
 	AutoStart       bool           `json:"auto_start"`
+	ShowConsole     bool           `json:"show_console"`
 	GameProcesses   []string       `json:"game_processes"`
 	Hotkeys         []hotkeyConfig `json:"hotkeys"`
+}
+
+func (cfg *config) UnmarshalJSON(data []byte) error {
+	type configAlias config
+	decoded := configAlias{ShowConsole: true}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*cfg = config(decoded)
+	return nil
 }
 
 type hotkeyConfig struct {
@@ -299,6 +312,14 @@ type kbdllhookstruct struct {
 }
 
 func main() {
+	if isTraceConsoleInvocation(os.Args) {
+		if err := runTraceConsole(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -316,6 +337,14 @@ func main() {
 		nextHotkeyID:   1,
 	}
 	appState = a
+	if err := setConsoleVisible(a.cfg.ShowConsole); err != nil {
+		log.Printf("apply console visibility failed: %v", err)
+	}
+	defer func() {
+		if err := setConsoleVisible(false); err != nil {
+			log.Printf("close trace console failed: %v", err)
+		}
+	}()
 
 	hwnd, err := createMessageWindow()
 	if err != nil {
@@ -338,10 +367,6 @@ func main() {
 		log.Fatalf("install keyboard hook failed: %v", err)
 	}
 	defer a.uninstallKeyboardHook()
-
-	// Periodic hook reinstallation every 5s to recover from silent removal by Windows.
-	procSetTimer.Call(uintptr(hwnd), timerIDRehook, 5000, 0)
-	defer procKillTimer.Call(uintptr(hwnd), timerIDRehook)
 
 	log.Println("AltCmd running in tray")
 	log.Printf("config path: %s", configPath)
@@ -401,6 +426,7 @@ func defaultConfig() config {
 	return config{
 		GameModeEnabled: false,
 		AutoStart:       false,
+		ShowConsole:     true,
 		GameProcesses: []string{
 			"valorant.exe",
 			"league of legends.exe",
@@ -510,11 +536,6 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 			appState.handleMenuCommand(menuID)
 		}
 		return 0
-	case wmTimer:
-		if wParam == timerIDRehook && appState != nil {
-			appState.reinstallHook()
-		}
-		return 0
 	case wmTrayIcon:
 		eventCode := uint32(lParam & 0xFFFF)
 		if eventCode == wmRButtonUp || eventCode == wmLButtonUp || eventCode == wmContextMenu || eventCode == wmLButtonDblClk || eventCode == ninSelect || eventCode == ninKeySelect {
@@ -578,6 +599,13 @@ func showTrayMenu(hwnd windows.Handle) {
 	}
 	appendMenu(menu, flagsStartup, idMenuToggleStartup, "开机自启动")
 
+	flagsConsole := uintptr(mfString)
+	if appState != nil && appState.cfg.ShowConsole {
+		flagsConsole |= mfChecked
+	}
+	appendMenu(menu, flagsConsole, idMenuToggleConsole, "显示追踪终端")
+
+	appendMenu(menu, mfString, idMenuSettings, "快捷键设置...")
 	appendMenu(menu, mfString, idMenuReloadConfig, "重载配置")
 	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, mfString, idMenuExit, "退出")
@@ -624,6 +652,30 @@ func (a *app) handleMenuCommand(id int) {
 			log.Printf("save config failed: %v", err)
 		}
 		log.Printf("auto-start: %v", a.cfg.AutoStart)
+	case idMenuToggleConsole:
+		oldValue := a.cfg.ShowConsole
+		newValue := !oldValue
+		if err := setConsoleVisible(newValue); err != nil {
+			log.Printf("toggle console visibility failed: %v", err)
+			return
+		}
+		a.cfg.ShowConsole = newValue
+		if err := saveConfig(a.configPath, a.cfg); err != nil {
+			a.cfg.ShowConsole = oldValue
+			if restoreErr := setConsoleVisible(oldValue); restoreErr != nil {
+				log.Printf("restore console visibility failed: %v", restoreErr)
+			}
+			log.Printf("save console visibility failed: %v", err)
+			return
+		}
+		if a.cfg.ShowConsole {
+			log.Printf("trace console shown")
+		}
+	case idMenuSettings:
+		if err := a.showSettingsWindow(); err != nil {
+			log.Printf("open settings window failed: %v", err)
+			showSettingsMessage(a.hwnd, "无法打开快捷键设置窗口：\n"+err.Error(), true)
+		}
 	case idMenuReloadConfig:
 		cfgPath, cfg, err := loadOrCreateConfig()
 		if err != nil {
@@ -671,10 +723,8 @@ func (a *app) registerHotkeys() {
 	a.registeredByID = make(map[int]registeredHotkey)
 	a.altComboTable = [256]int{}
 	a.pendingByKey = [256]int{}
-	a.pendingExecuteID = 0
 	a.altDownPending = false
 	a.altDownVK = 0
-	a.altDownTick = 0
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
 	a.nextHotkeyID = 1
@@ -753,33 +803,6 @@ func (a *app) uninstallKeyboardHook() {
 	a.hookHandle = 0
 }
 
-// reinstallHook ensures the keyboard hook is alive.
-// Windows silently removes hooks whose callbacks don't return fast enough.
-func (a *app) reinstallHook() {
-	if a.hookHandle != 0 {
-		procUnhookWindowsHookEx.Call(uintptr(a.hookHandle))
-		a.hookHandle = 0
-	}
-	hInstance, _, _ := procGetModuleHandleW.Call(0)
-	r, _, _ := procSetWindowsHookExW.Call(
-		whKeyboardLL,
-		keyboardHook,
-		hInstance,
-		0,
-	)
-	if r != 0 {
-		a.hookHandle = windows.Handle(r)
-	}
-	// Reset hook state on reinstall to prevent stale state.
-	a.altDownPending = false
-	a.altDownVK = 0
-	a.altDownTick = 0
-	a.altComboHandled = false
-	a.syntheticAltInjected = false
-	a.pendingByKey = [256]int{}
-	a.pendingExecuteID = 0
-}
-
 func (a *app) handleHotkeyID(id int) {
 	hk, ok := a.registeredByID[id]
 	if !ok {
@@ -821,14 +844,14 @@ func (a *app) handleHotkeyID(id int) {
 
 // handleHookKeyDown processes key-down events from the low-level keyboard hook.
 // CRITICAL: Zero allocations. No fmt, no log, no map writes, no channel ops.
-func (a *app) handleHookKeyDown(vk uint, eventTick uint32) bool {
-	a.recoverStaleAltState(eventTick)
-
+func (a *app) handleHookKeyDown(vk uint) bool {
 	// Always swallow real Alt key-down.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
+		if !a.altDownPending {
+			a.pendingByKey = [256]int{}
+		}
 		a.altDownPending = true
 		a.altDownVK = vk
-		a.altDownTick = eventTick
 		a.altComboHandled = false
 		return true
 	}
@@ -853,8 +876,12 @@ func (a *app) handleHookKeyDown(vk uint, eventTick uint32) bool {
 	// Check registered Alt+key combo via fast table lookup (no allocation).
 	if vk < 256 {
 		if id := a.altComboTable[vk]; id != 0 {
+			if a.pendingByKey[vk] != 0 {
+				return true
+			}
 			a.pendingByKey[vk] = id
 			a.altComboHandled = true
+			postMessage(a.hwnd, wmExecute, uintptr(id), 0)
 			return true
 		}
 	}
@@ -866,40 +893,22 @@ func (a *app) handleHookKeyDown(vk uint, eventTick uint32) bool {
 
 // handleHookKeyUp processes key-up events from the low-level keyboard hook.
 // CRITICAL: Zero allocations.
-func (a *app) handleHookKeyUp(vk uint, eventTick uint32) bool {
-	a.recoverStaleAltState(eventTick)
-
+func (a *app) handleHookKeyUp(vk uint) bool {
 	// Always swallow real Alt key-up to prevent menu activation.
 	if vk == vkLMenu || vk == vkRMenu || vk == vkMenu {
-		executeID := a.pendingExecuteID
-		if executeID == 0 {
-			executeID = a.takePendingComboID()
-		}
-		if a.altDownPending {
-			a.altDownPending = false
-			a.altDownVK = 0
-			a.altDownTick = 0
-			a.altComboHandled = false
-		}
-		a.pendingExecuteID = 0
 		if a.syntheticAltInjected {
 			sendSequenceImmediate(keyEvent(uint16(vk), false))
 			a.syntheticAltInjected = false
 		}
-		if executeID != 0 {
-			postMessage(a.hwnd, wmExecute, uintptr(executeID), 0)
-		}
+		a.altDownPending = false
+		a.altDownVK = 0
+		a.altComboHandled = false
 		return true
 	}
 
 	if vk < 256 {
-		if id := a.pendingByKey[vk]; id != 0 {
+		if a.pendingByKey[vk] != 0 {
 			a.pendingByKey[vk] = 0
-			if a.altDownPending {
-				a.pendingExecuteID = id
-			} else {
-				postMessage(a.hwnd, wmExecute, uintptr(id), 0)
-			}
 			return true
 		}
 	}
@@ -918,51 +927,14 @@ func (a *app) flushPendingAlt() {
 	a.syntheticAltInjected = sendSequenceImmediate(keyEvent(vk, true))
 	a.altDownPending = false
 	a.altDownVK = 0
-	a.altDownTick = 0
-}
-
-func (a *app) takePendingComboID() int {
-	for index, id := range a.pendingByKey {
-		if id == 0 {
-			continue
-		}
-		a.pendingByKey[index] = 0
-		return id
-	}
-	return 0
 }
 
 func (a *app) cancelPendingAltCombo() {
 	a.altDownPending = false
 	a.altDownVK = 0
-	a.altDownTick = 0
 	a.altComboHandled = false
 	a.syntheticAltInjected = false
-	a.pendingExecuteID = 0
 	a.pendingByKey = [256]int{}
-}
-
-func (a *app) recoverStaleAltState(eventTick uint32) {
-	if !a.altDownPending || a.altDownTick == 0 {
-		return
-	}
-	if eventTick-a.altDownTick < altPendingTimeout {
-		return
-	}
-	if isAltPhysicallyDown() {
-		a.altDownTick = eventTick
-		return
-	}
-	a.cancelPendingAltCombo()
-}
-
-func isAltPhysicallyDown() bool {
-	left, _, _ := procGetAsyncKeyState.Call(vkLMenu)
-	if left&keyStateDownMask != 0 {
-		return true
-	}
-	right, _, _ := procGetAsyncKeyState.Call(vkRMenu)
-	return right&keyStateDownMask != 0
 }
 
 func isModifierKey(vk uint) bool {
@@ -980,6 +952,13 @@ func lowLevelKeyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if nCode != hcAction || appState == nil {
 		return callNextHook(nCode, wParam, lParam)
 	}
+	if appState.settingsHwnd != 0 {
+		foreground, _, _ := procGetForegroundWindow.Call()
+		rootOwner, _, _ := procGetAncestor.Call(foreground, 3)
+		if windows.Handle(rootOwner) == appState.settingsHwnd {
+			return callNextHook(nCode, wParam, lParam)
+		}
+	}
 
 	info := (*kbdllhookstruct)(unsafe.Pointer(lParam))
 	if (info.Flags & llkhfInjected) != 0 {
@@ -989,11 +968,11 @@ func lowLevelKeyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	vk := uint(info.VKCode)
 	switch uint32(wParam) {
 	case wmKeyDown, wmSysKeyDown:
-		if appState.handleHookKeyDown(vk, info.Time) {
+		if appState.handleHookKeyDown(vk) {
 			return 1
 		}
 	case wmKeyUp, wmSysKeyUp:
-		if appState.handleHookKeyUp(vk, info.Time) {
+		if appState.handleHookKeyUp(vk) {
 			return 1
 		}
 	}
@@ -1135,6 +1114,16 @@ func runMessageLoop() {
 		}
 		if r == 0 {
 			return
+		}
+
+		if appState != nil && appState.settingsHwnd != 0 {
+			isDialog, _, _ := procIsDialogMessageW.Call(
+				uintptr(appState.settingsHwnd),
+				uintptr(unsafe.Pointer(&m)),
+			)
+			if isDialog != 0 {
+				continue
+			}
 		}
 
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
