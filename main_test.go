@@ -131,6 +131,27 @@ func TestDefaultConfigIncludesRefreshHotkey(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigIncludesNewHotkey(t *testing.T) {
+	cfg := defaultConfig()
+	found := false
+	for _, item := range cfg.Hotkeys {
+		if item.Combo == "Alt+N" && item.Action == hotkeyActionNew && item.Enabled {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("default config should enable Alt+N to send Ctrl+N")
+	}
+
+	a := &app{cfg: cfg}
+	a.registerHotkeys()
+	id := a.altComboTable['N']
+	if id == 0 || a.registeredByID[id].ActionName != hotkeyActionNew {
+		t.Fatalf("Alt+N registration = %#v, want new action", a.registeredByID[id])
+	}
+}
+
 func TestMigrateConfigAddsFindHotkeyOnce(t *testing.T) {
 	cfg := config{
 		Hotkeys: []hotkeyConfig{
@@ -144,10 +165,11 @@ func TestMigrateConfigAddsFindHotkeyOnce(t *testing.T) {
 	if cfg.ConfigVersion != currentConfigVersion {
 		t.Fatalf("config version = %d, want %d", cfg.ConfigVersion, currentConfigVersion)
 	}
-	if len(cfg.Hotkeys) != 3 ||
+	if len(cfg.Hotkeys) != 4 ||
 		cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+F", Action: hotkeyActionFind, Enabled: true}) ||
-		cfg.Hotkeys[2] != (hotkeyConfig{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true}) {
-		t.Fatalf("migrated hotkeys = %#v, want existing hotkey and enabled Alt+F/Alt+R", cfg.Hotkeys)
+		cfg.Hotkeys[2] != (hotkeyConfig{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true}) ||
+		cfg.Hotkeys[3] != (hotkeyConfig{Combo: "Alt+N", Action: hotkeyActionNew, Enabled: true}) {
+		t.Fatalf("migrated hotkeys = %#v, want existing hotkey and enabled Alt+F/Alt+R/Alt+N", cfg.Hotkeys)
 	}
 	if migrateConfig(&cfg) {
 		t.Fatal("an already migrated config should not be migrated again")
@@ -165,9 +187,12 @@ func TestMigrateConfigVersionOneAddsRefreshHotkey(t *testing.T) {
 	if !migrateConfig(&cfg) {
 		t.Fatal("version-one config should be migrated")
 	}
-	if cfg.ConfigVersion != currentConfigVersion || len(cfg.Hotkeys) != 2 ||
+	if cfg.ConfigVersion != currentConfigVersion || len(cfg.Hotkeys) != 3 ||
 		cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true}) {
-		t.Fatalf("migrated config = %#v, want enabled Alt+R refresh shortcut", cfg)
+		t.Fatalf("migrated config = %#v, want enabled Alt+R refresh and Alt+N new shortcuts", cfg)
+	}
+	if cfg.Hotkeys[2] != (hotkeyConfig{Combo: "Alt+N", Action: hotkeyActionNew, Enabled: true}) {
+		t.Fatalf("migrated Alt+N = %#v, want enabled new shortcut", cfg.Hotkeys[2])
 	}
 }
 
@@ -178,8 +203,9 @@ func TestMigrateConfigPreservesExistingAltFHotkey(t *testing.T) {
 	if !migrateConfig(&cfg) {
 		t.Fatal("legacy config version should be updated")
 	}
-	if len(cfg.Hotkeys) != 2 || cfg.Hotkeys[0] != existing ||
-		cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true}) {
+	if len(cfg.Hotkeys) != 3 || cfg.Hotkeys[0] != existing ||
+		cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true}) ||
+		cfg.Hotkeys[2] != (hotkeyConfig{Combo: "Alt+N", Action: hotkeyActionNew, Enabled: true}) {
 		t.Fatalf("migration changed existing Alt+F mapping: %#v", cfg.Hotkeys)
 	}
 }
@@ -191,8 +217,21 @@ func TestMigrateConfigPreservesExistingAltRHotkey(t *testing.T) {
 	if !migrateConfig(&cfg) {
 		t.Fatal("version-one config should be migrated")
 	}
-	if len(cfg.Hotkeys) != 1 || cfg.Hotkeys[0] != existing {
+	if len(cfg.Hotkeys) != 2 || cfg.Hotkeys[0] != existing ||
+		cfg.Hotkeys[1] != (hotkeyConfig{Combo: "Alt+N", Action: hotkeyActionNew, Enabled: true}) {
 		t.Fatalf("migration changed existing Alt+R mapping: %#v", cfg.Hotkeys)
+	}
+}
+
+func TestMigrateConfigPreservesExistingAltNHotkey(t *testing.T) {
+	existing := hotkeyConfig{Combo: "alt+n", Action: hotkeyActionCopy, Enabled: false}
+	cfg := config{ConfigVersion: 2, Hotkeys: []hotkeyConfig{existing}}
+
+	if !migrateConfig(&cfg) {
+		t.Fatal("version-two config should be migrated")
+	}
+	if len(cfg.Hotkeys) != 1 || cfg.Hotkeys[0] != existing {
+		t.Fatalf("migration changed existing Alt+N mapping: %#v", cfg.Hotkeys)
 	}
 }
 
