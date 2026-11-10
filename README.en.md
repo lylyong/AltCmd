@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.2.2**
+Current version: **1.2.3**
 
 ## Features
 
