@@ -118,6 +118,7 @@ const (
 	hotkeyActionUndo         = "undo"
 	hotkeyActionSave         = "save"
 	hotkeyActionSelectAll    = "select_all"
+	hotkeyActionNew          = "new"
 	hotkeyActionNewTab       = "new_tab"
 	hotkeyActionCloseTab     = "close_tab"
 	hotkeyActionCloseWindow  = "close_window"
@@ -125,7 +126,7 @@ const (
 	hotkeyActionFind         = "find"
 	hotkeyActionRefresh      = "refresh"
 
-	currentConfigVersion = 2
+	currentConfigVersion = 3
 )
 
 //go:embed VERSION
@@ -557,6 +558,7 @@ func defaultConfig() config {
 			{Combo: "Alt+Z", Action: hotkeyActionUndo, Enabled: true},
 			{Combo: "Alt+S", Action: hotkeyActionSave, Enabled: true},
 			{Combo: "Alt+A", Action: hotkeyActionSelectAll, Enabled: true},
+			{Combo: "Alt+N", Action: hotkeyActionNew, Enabled: true},
 			{Combo: "Alt+T", Action: hotkeyActionNewTab, Enabled: true},
 			{Combo: "Alt+W", Action: hotkeyActionCloseTab, Enabled: true},
 			{Combo: "Alt+Q", Action: hotkeyActionCloseWindow, Enabled: true},
@@ -583,6 +585,13 @@ func migrateConfig(cfg *config) bool {
 		cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
 			Combo:   "Alt+R",
 			Action:  hotkeyActionRefresh,
+			Enabled: true,
+		})
+	}
+	if cfg.ConfigVersion < 3 && !hasHotkeyCombo(cfg.Hotkeys, "Alt+N") {
+		cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
+			Combo:   "Alt+N",
+			Action:  hotkeyActionNew,
 			Enabled: true,
 		})
 	}
@@ -1007,6 +1016,8 @@ func (a *app) handleHotkeyID(id int) {
 		sendCtrlCombo('S')
 	case hotkeyActionSelectAll:
 		sendCtrlCombo('A')
+	case hotkeyActionNew:
+		sendCtrlCombo('N')
 	case hotkeyActionNewTab:
 		sendCtrlCombo('T')
 	case hotkeyActionCloseTab:
@@ -1177,7 +1188,7 @@ func callNextHook(nCode int, wParam uintptr, lParam uintptr) uintptr {
 func isSupportedAction(action string) bool {
 	switch action {
 	case hotkeyActionCopy, hotkeyActionFind, hotkeyActionRefresh, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
-		hotkeyActionSave, hotkeyActionSelectAll, hotkeyActionNewTab,
+		hotkeyActionSave, hotkeyActionSelectAll, hotkeyActionNew, hotkeyActionNewTab,
 		hotkeyActionCloseTab, hotkeyActionCloseWindow,
 		hotkeyActionSwitchWindow:
 		return true

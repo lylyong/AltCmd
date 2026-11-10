@@ -4,7 +4,7 @@
 
 AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 Alt 组合映射到常见开发动作。
 
-当前版本：**1.2.3**
+当前版本：**1.3.0**
 
 ## 已实现能力
 
@@ -24,6 +24,7 @@ AltCmd 是一个 Windows 常驻托盘工具，用于把常用快捷键习惯从 
 - `Alt+Z` -> `Ctrl+Z`
 - `Alt+S` -> `Ctrl+S`
 - `Alt+A` -> `Ctrl+A`
+- `Alt+N` -> `Ctrl+N`（新建）
 - `Alt+T` -> `Ctrl+T`
 - `Alt+W` -> `Ctrl+W`
 - `Alt+Q` -> `Alt+F4`
@@ -88,7 +89,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 
 ```json
 {
-	"config_version": 1,
+	"config_version": 3,
 	"game_mode_enabled": false,
 	"auto_start": true,
 	"show_console": false,
@@ -105,6 +106,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 		{ "combo": "Alt+Z", "action": "undo", "enabled": true },
 		{ "combo": "Alt+S", "action": "save", "enabled": true },
 		{ "combo": "Alt+A", "action": "select_all", "enabled": true },
+		{ "combo": "Alt+N", "action": "new", "enabled": true },
 		{ "combo": "Alt+T", "action": "new_tab", "enabled": true },
 		{ "combo": "Alt+W", "action": "close_tab", "enabled": true },
 		{ "combo": "Alt+Q", "action": "close_window", "enabled": true },
@@ -123,6 +125,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 - `undo`
 - `save`
 - `select_all`
+- `new`
 - `new_tab`
 - `close_tab`
 - `close_window`
@@ -136,7 +139,7 @@ AltCmd 是需要访问当前用户桌面并显示托盘图标的交互式程序�
 
 快捷键设置窗口目前只接受 `Alt+按键` 组合，只能编辑或删除已有快捷键，不能新增快捷键。`enabled` 是互斥的布尔状态：`true` 表示启用，`false` 表示禁用；禁用的快捷键不会注册，也不会执行。点击“探测冲突”可检查 Windows 已注册的全局热键，并在列表中标出冲突项；Windows 不提供查询占用软件名称的接口，探测也无法发现应用内部快捷键或其他低层键盘钩子冲突。手动修改 JSON 后可用托盘菜单 `重载配置` 立即生效；在图形化设置窗口点击“保存并应用”则会保存并立即生效。
 
-旧版配置会在首次启动时自动升级：若尚未配置 `Alt+F` 或 `Alt+R`，程序会分别添加查找或刷新快捷键；已有的对应快捷键配置会保留。
+旧版配置会在首次启动时自动升级：若尚未配置 `Alt+F`、`Alt+R` 或 `Alt+N`，程序会分别添加查找、刷新或新建快捷键；已有的对应快捷键配置会保留。
 
 快捷键设置窗口会显示当前游戏进程名单，可添加或删除项目；添加游戏时会自动开启游戏模式。名单中的游戏成为前台窗口时，Alt 快捷键映射会暂停；名单保存在用户配置中。
 

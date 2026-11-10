@@ -138,6 +138,7 @@ var (
 		{hotkeyActionUndo, "撤销"},
 		{hotkeyActionSave, "保存"},
 		{hotkeyActionSelectAll, "全选"},
+		{hotkeyActionNew, "新建"},
 		{hotkeyActionNewTab, "新建标签页"},
 		{hotkeyActionCloseTab, "关闭标签页"},
 		{hotkeyActionCloseWindow, "关闭窗口"},

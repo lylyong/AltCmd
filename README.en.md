@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.2.3**
+Current version: **1.3.0**
 
 ## Features
 
@@ -25,6 +25,7 @@ Current version: **1.2.3**
 - `Alt+Z` -> `Ctrl+Z`
 - `Alt+S` -> `Ctrl+S`
 - `Alt+A` -> `Ctrl+A`
+- `Alt+N` -> `Ctrl+N` (New)
 - `Alt+T` -> `Ctrl+T`
 - `Alt+W` -> `Ctrl+W`
 - `Alt+Q` -> `Alt+F4`
@@ -86,7 +87,7 @@ The file is created automatically on first launch. Example:
 
 ```json
 {
-	"config_version": 1,
+	"config_version": 3,
 	"game_mode_enabled": false,
 	"auto_start": true,
 	"show_console": false,
@@ -102,6 +103,7 @@ The file is created automatically on first launch. Example:
 		{ "combo": "Alt+Z", "action": "undo", "enabled": true },
 		{ "combo": "Alt+S", "action": "save", "enabled": true },
 		{ "combo": "Alt+A", "action": "select_all", "enabled": true },
+		{ "combo": "Alt+N", "action": "new", "enabled": true },
 		{ "combo": "Alt+T", "action": "new_tab", "enabled": true },
 		{ "combo": "Alt+W", "action": "close_tab", "enabled": true },
 		{ "combo": "Alt+Q", "action": "close_window", "enabled": true },
@@ -120,6 +122,7 @@ Supported `action` values:
 - `undo`
 - `save`
 - `select_all`
+- `new`
 - `new_tab`
 - `close_tab`
 - `close_window`
@@ -133,7 +136,7 @@ Examples of `combo` values:
 
 The shortcut settings window currently accepts only `Alt+key` combinations and can only edit or remove existing shortcuts; it does not add shortcuts. `enabled` is a mutually exclusive Boolean state: `true` enables a shortcut and `false` disables it. Disabled shortcuts are not registered or executed. Select **Probe conflicts** to check for conflicts with Windows registered global hotkeys and mark results in the list. Windows does not provide an API to identify which process registered a hotkey. The probe also cannot detect shortcuts handled internally by applications or conflicts with other low-level keyboard hooks. An unavailable probe result does not necessarily mean that a shortcut is invalid or in conflict.
 
-On first launch, older configurations are upgraded automatically: enabled `Alt+F` and `Alt+R` shortcuts are added when no mappings exist. Existing mappings for either shortcut are preserved.
+On first launch, older configurations are upgraded automatically: enabled `Alt+F`, `Alt+R`, and `Alt+N` shortcuts are added when no mappings exist. Existing mappings for those shortcuts are preserved.
 
 After editing the JSON file manually, select **Reload configuration** from the tray menu to apply the changes. In the settings window, select **Save and apply** to save and apply changes immediately.
 
