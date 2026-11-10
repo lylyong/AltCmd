@@ -4,6 +4,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\AltCmd"
+$versionPath = Join-Path $PSScriptRoot "VERSION"
+$version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+	throw "VERSION must contain a numeric major.minor.patch version, for example 1.2.3."
+}
 $installExe = Join-Path $installDir "AltCmd.exe"
 $configPath = Join-Path $env:APPDATA "AltCmd\config.json"
 $runKeyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
@@ -78,13 +83,23 @@ function Stop-InstalledAltCmd {
 	}
 }
 
+function Remove-InstalledAltCmdExecutables {
+	if (-not (Test-Path -LiteralPath $installDir)) {
+		return
+	}
+	if (Test-Path -LiteralPath $installExe) {
+		Remove-Item -LiteralPath $installExe -Force
+	}
+	Get-ChildItem -LiteralPath $installDir -File |
+		Where-Object { $_.Name -match '^AltCmd-\d+\.\d+\.\d+\.exe$' } |
+		Remove-Item -Force
+}
+
 if ($Uninstall) {
 	Stop-InstalledAltCmd
 	Set-AltCmdAutoStart -Enabled $false
 	Remove-AltCmdAutoStart
-	if (Test-Path -LiteralPath $installExe) {
-		Remove-Item -LiteralPath $installExe -Force
-	}
+	Remove-InstalledAltCmdExecutables
 	Write-Output "AltCmd startup entry and installed executable removed. User configuration was kept."
 	exit 0
 }
@@ -97,50 +112,35 @@ if ($osVersion.Major -lt 10) {
 	throw "AltCmd is built with Go 1.23 and requires Windows 10 / Windows Server 2016 or later."
 }
 
-$go = Get-Command "go" -ErrorAction Stop
-$goVersionOutput = & $go.Source version
-if ($LASTEXITCODE -ne 0) {
-	throw "Could not determine the Go version."
-}
-if ($goVersionOutput -notmatch '\bgo(\d+)\.(\d+)') {
-	throw "Could not parse Go version: $goVersionOutput"
-}
-$goMajor = [int]$Matches[1]
-$goMinor = [int]$Matches[2]
-if ($goMajor -lt 1 -or ($goMajor -eq 1 -and $goMinor -lt 23)) {
-	throw "Building AltCmd requires Go 1.23 or later. Found: $goVersionOutput"
-}
-
 $projectDir = $PSScriptRoot
-$buildOutput = Join-Path $env:TEMP ("AltCmd-build-{0}.exe" -f [guid]::NewGuid().ToString("N"))
+$buildOutput = Join-Path $projectDir "AltCmd-$version.exe"
 $stagedExe = Join-Path $installDir ("AltCmd-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
 
 try {
-	Push-Location $projectDir
-	try {
-		& $go.Source build -ldflags "-H=windowsgui" -buildvcs=false -o $buildOutput .
-		if ($LASTEXITCODE -ne 0) {
-			throw "Go build failed with exit code $LASTEXITCODE."
-		}
-	} finally {
-		Pop-Location
+	& (Join-Path $projectDir "build.ps1") -OutputPath $buildOutput
+	if (-not $?) {
+		throw "AltCmd build failed."
 	}
 
 	New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 	Copy-Item -LiteralPath $buildOutput -Destination $stagedExe
 	Stop-InstalledAltCmd
 	Move-Item -LiteralPath $stagedExe -Destination $installExe -Force
+	Get-ChildItem -LiteralPath $installDir -File |
+		Where-Object {
+			$_.Name -match '^AltCmd-\d+\.\d+\.\d+\.exe$' -and
+			-not [string]::Equals($_.FullName, $installExe, [System.StringComparison]::OrdinalIgnoreCase)
+		} |
+		Remove-Item -Force
 
 	Set-AltCmdAutoStart -Enabled $true
 	New-Item -Path $runKeyPath -Force | Out-Null
 	New-ItemProperty -Path $runKeyPath -Name "AltCmd" -Value ('"{0}"' -f $installExe) -PropertyType String -Force | Out-Null
 
 	Start-Process -FilePath $installExe
-	Write-Output "AltCmd built with $goVersionOutput, installed for the current user, configured to start at sign-in, and launched."
+	Write-Output "AltCmd installed for the current user, configured to start at sign-in, and launched."
 } finally {
-	foreach ($tempPath in @($buildOutput, $stagedExe)) {
-		if (Test-Path -LiteralPath $tempPath) {
-			Remove-Item -LiteralPath $tempPath -Force
-		}
+	if (Test-Path -LiteralPath $stagedExe) {
+		Remove-Item -LiteralPath $stagedExe -Force
 	}
 }

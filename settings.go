@@ -50,21 +50,38 @@ const (
 	mbOK              = 0x00000000
 	mbIconError       = 0x00000010
 	mbIconInformation = 0x00000040
+	wmCtlColorStatic  = 0x0138
+	wmTimer           = 0x0113
+	ssNotify          = 0x0100
+	colorWindow       = 5
+	bkModeTransparent = 1
+	gmemMoveable      = 0x0002
+	cfUnicodeText     = 13
 
-	settingsListID   = 2001
-	settingsComboID  = 2002
-	settingsActionID = 2003
-	settingsEnableID = 2004
-	settingsUpdateID = 2006
-	settingsRemoveID = 2007
-	settingsProbeID  = 2008
-	settingsSaveID   = 2009
-	settingsCancelID = 2010
+	settingsListID     = 2001
+	settingsComboID    = 2002
+	settingsActionID   = 2003
+	settingsEnableID   = 2004
+	settingsUpdateID   = 2006
+	settingsRemoveID   = 2007
+	settingsProbeID    = 2008
+	settingsSaveID     = 2009
+	settingsCancelID   = 2010
+	settingsGameListID = 2013
+	aboutJoinGroupID   = 3001
+	aboutGitHubID      = 3002
+	aboutCloseID       = 3003
+	aboutStatusID      = 3004
+	aboutStatusTimerID = 3005
+	aboutStatusTimeout = 2500
+	aboutWindowWidth   = 440
+	aboutWindowHeight  = 260
 
 	modNoRepeat = 0x4000
 
 	globalHotkeyProbeIDBase = 0x7000
 	settingsAddGameID       = 2011
+	settingsRemoveGameID    = 2012
 
 	ofnFileMustExist = 0x00001000
 	ofnPathMustExist = 0x00000800
@@ -75,6 +92,7 @@ const (
 var (
 	settingsUser32           = windows.NewLazySystemDLL("user32.dll")
 	settingsComdlg32         = windows.NewLazySystemDLL("comdlg32.dll")
+	settingsGdi32            = windows.NewLazySystemDLL("gdi32.dll")
 	procRegisterHotKey       = settingsUser32.NewProc("RegisterHotKey")
 	procUnregisterHotKey     = settingsUser32.NewProc("UnregisterHotKey")
 	procSetWindowTextW       = settingsUser32.NewProc("SetWindowTextW")
@@ -85,22 +103,42 @@ var (
 	procMessageBoxW          = settingsUser32.NewProc("MessageBoxW")
 	procIsDialogMessageW     = settingsUser32.NewProc("IsDialogMessageW")
 	procGetAncestor          = settingsUser32.NewProc("GetAncestor")
+	procGetDlgCtrlID         = settingsUser32.NewProc("GetDlgCtrlID")
+	procGetSysColorBrush     = settingsUser32.NewProc("GetSysColorBrush")
+	procGetSystemMetrics     = settingsUser32.NewProc("GetSystemMetrics")
+	procSetTimer             = settingsUser32.NewProc("SetTimer")
+	procKillTimer            = settingsUser32.NewProc("KillTimer")
+	procOpenClipboard        = settingsUser32.NewProc("OpenClipboard")
+	procEmptyClipboard       = settingsUser32.NewProc("EmptyClipboard")
+	procSetClipboardData     = settingsUser32.NewProc("SetClipboardData")
+	procCloseClipboard       = settingsUser32.NewProc("CloseClipboard")
+	procSetBkMode            = settingsGdi32.NewProc("SetBkMode")
+	procSetTextColor         = settingsGdi32.NewProc("SetTextColor")
+	procGlobalAlloc          = kernel32.NewProc("GlobalAlloc")
+	procGlobalLock           = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock         = kernel32.NewProc("GlobalUnlock")
+	procGlobalFree           = kernel32.NewProc("GlobalFree")
 	procGetOpenFileNameW     = settingsComdlg32.NewProc("GetOpenFileNameW")
 	procCommDlgExtendedError = settingsComdlg32.NewProc("CommDlgExtendedError")
 	settingsWndProcCallback  = windows.NewCallback(settingsWindowProc)
 
 	settingsClassRegistered bool
+	aboutClassRegistered    bool
+	aboutWindowBrush        windows.Handle
+	aboutWndProcCallback    = windows.NewCallback(aboutWindowProc)
 	settingsActions         = []struct {
 		value string
 		label string
 	}{
 		{hotkeyActionCopy, "复制"},
 		{hotkeyActionFind, "查找"},
+		{hotkeyActionRefresh, "刷新"},
 		{hotkeyActionPaste, "粘贴"},
 		{hotkeyActionCut, "剪切"},
 		{hotkeyActionUndo, "撤销"},
 		{hotkeyActionSave, "保存"},
 		{hotkeyActionSelectAll, "全选"},
+		{hotkeyActionNew, "新建"},
 		{hotkeyActionNewTab, "新建标签页"},
 		{hotkeyActionCloseTab, "关闭标签页"},
 		{hotkeyActionCloseWindow, "关闭窗口"},
@@ -254,23 +292,31 @@ func (a *app) createSettingsControls() error {
 	if _, err = createSettingsControl("BUTTON", "探测冲突", wsChild|wsVisible|wsTabStop, 465, 305, 120, 32, settingsProbeID, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("STATIC", "更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 365, 330, 40, 0, 0); err != nil {
+	if _, err = createSettingsControl("STATIC", "更新项目后点“探测冲突”；保存后立即生效。", wsChild|wsVisible, 325, 350, 330, 38, 0, 0); err != nil {
 		return err
 	}
-	a.settingsGameStatus, err = createSettingsControl("STATIC", "", wsChild|wsVisible, 325, 410, 330, 36, 0, 0)
+	a.settingsGameStatus, err = createSettingsControl("STATIC", "", wsChild|wsVisible, 325, 390, 330, 22, 0, 0)
 	if err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "添加游戏程序...", wsChild|wsVisible|wsTabStop, 325, 450, 160, 32, settingsAddGameID, 0); err != nil {
+	a.settingsGameList, err = createSettingsControl("LISTBOX", "", wsChild|wsVisible|wsBorder|wsVScroll|wsHScroll|wsTabStop|lbsHasStrings, 325, 415, 330, 65, settingsGameListID, 0)
+	if err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "保存并应用", wsChild|wsVisible|wsTabStop, 435, 510, 115, 34, settingsSaveID, 0); err != nil {
+	if _, err = createSettingsControl("BUTTON", "添加游戏程序...", wsChild|wsVisible|wsTabStop, 325, 485, 145, 30, settingsAddGameID, 0); err != nil {
 		return err
 	}
-	if _, err = createSettingsControl("BUTTON", "取消", wsChild|wsVisible|wsTabStop, 565, 510, 90, 34, settingsCancelID, 0); err != nil {
+	if _, err = createSettingsControl("BUTTON", "删除选中游戏", wsChild|wsVisible|wsTabStop, 480, 485, 145, 30, settingsRemoveGameID, 0); err != nil {
+		return err
+	}
+	if _, err = createSettingsControl("BUTTON", "保存并应用", wsChild|wsVisible|wsTabStop, 435, 520, 115, 34, settingsSaveID, 0); err != nil {
+		return err
+	}
+	if _, err = createSettingsControl("BUTTON", "取消", wsChild|wsVisible|wsTabStop, 565, 520, 90, 34, settingsCancelID, 0); err != nil {
 		return err
 	}
 	a.updateGameStatus()
+	a.refreshGameProcessList()
 	return nil
 }
 
@@ -326,6 +372,8 @@ func settingsWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) ui
 				appState.probeSettingsConflicts()
 			case settingsAddGameID:
 				appState.addGameExecutable()
+			case settingsRemoveGameID:
+				appState.removeSelectedGameProcess()
 			case settingsSaveID:
 				appState.saveSettings()
 			case settingsCancelID:
@@ -340,6 +388,7 @@ func settingsWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) ui
 		if appState.settingsHwnd == windows.Handle(hwnd) {
 			appState.settingsHwnd = 0
 			appState.settingsList = 0
+			appState.settingsGameList = 0
 			appState.settingsCombo = 0
 			appState.settingsAction = 0
 			appState.settingsEnabled = 0
@@ -486,6 +535,7 @@ func (a *app) addGameExecutable() {
 	}
 
 	cfg := a.cfg
+	cfg.GameProcesses = append([]string(nil), a.cfg.GameProcesses...)
 	added, processName := addGameProcess(&cfg, path)
 	if !added && cfg.GameModeEnabled {
 		showSettingsMessage(a.settingsHwnd, processName+" 已在游戏名单中。", false)
@@ -499,6 +549,7 @@ func (a *app) addGameExecutable() {
 
 	a.cfg = cfg
 	a.updateGameStatus()
+	a.refreshGameProcessList()
 	if added {
 		showSettingsMessage(
 			a.settingsHwnd,
@@ -508,6 +559,27 @@ func (a *app) addGameExecutable() {
 	} else {
 		showSettingsMessage(a.settingsHwnd, "游戏模式已开启。", false)
 	}
+}
+
+func (a *app) removeSelectedGameProcess() {
+	selected, _, _ := procSendMessageW.Call(uintptr(a.settingsGameList), lbGetCurSel, 0, 0)
+	index := int(int32(selected))
+	cfg := a.cfg
+	cfg.GameProcesses = append([]string(nil), a.cfg.GameProcesses...)
+	processName, removed := removeGameProcess(&cfg, index)
+	if !removed {
+		showSettingsMessage(a.settingsHwnd, "请先选择要删除的游戏程序。", true)
+		return
+	}
+	if err := saveConfig(a.configPath, cfg); err != nil {
+		showSettingsMessage(a.settingsHwnd, "保存游戏名单失败：\n"+err.Error(), true)
+		return
+	}
+
+	a.cfg = cfg
+	a.updateGameStatus()
+	a.refreshGameProcessList()
+	showSettingsMessage(a.settingsHwnd, processName+" 已从游戏名单中删除。", false)
 }
 
 func selectGameExecutable(owner windows.Handle) (string, bool, error) {
@@ -560,6 +632,15 @@ func addGameProcess(cfg *config, executablePath string) (bool, string) {
 	return true, processName
 }
 
+func removeGameProcess(cfg *config, index int) (string, bool) {
+	if index < 0 || index >= len(cfg.GameProcesses) {
+		return "", false
+	}
+	processName := cfg.GameProcesses[index]
+	cfg.GameProcesses = append(cfg.GameProcesses[:index], cfg.GameProcesses[index+1:]...)
+	return processName, true
+}
+
 func (a *app) updateGameStatus() {
 	if a.settingsGameStatus == 0 {
 		return
@@ -569,6 +650,16 @@ func (a *app) updateGameStatus() {
 		fmt.Sprintf("游戏名单：%d 个；命中前台进程时自动暂停映射。", len(a.cfg.GameProcesses)),
 	); err != nil {
 		log.Printf("update game process status failed: %v", err)
+	}
+}
+
+func (a *app) refreshGameProcessList() {
+	if a.settingsGameList == 0 {
+		return
+	}
+	procSendMessageW.Call(uintptr(a.settingsGameList), lbResetContent, 0, 0)
+	for _, processName := range a.cfg.GameProcesses {
+		addSettingsString(a.settingsGameList, lbAddString, processName)
 	}
 }
 
@@ -734,25 +825,261 @@ func showSettingsMessage(hwnd windows.Handle, text string, isError bool) {
 }
 
 func showAboutDialog(hwnd windows.Handle) error {
-	message, err := windows.UTF16PtrFromString(fmt.Sprintf(
-		"AltCmd %s\nWindows 常驻托盘快捷键工具\nQQ群：1102396065\n\nhttps://github.com/lylyong/AltCmd",
-		applicationVersion,
-	))
+	if appState == nil {
+		return errors.New("application is not initialized")
+	}
+	if appState.aboutHwnd != 0 {
+		procShowWindow.Call(uintptr(appState.aboutHwnd), swShow)
+		procSetForegroundWindow.Call(uintptr(appState.aboutHwnd))
+		return nil
+	}
+	if err := registerAboutWindowClass(); err != nil {
+		return err
+	}
+
+	className, err := windows.UTF16PtrFromString("AltCmdAboutWindow")
 	if err != nil {
-		return fmt.Errorf("format about message failed: %w", err)
+		return fmt.Errorf("format about window class failed: %w", err)
 	}
 	title, err := windows.UTF16PtrFromString("关于 AltCmd")
 	if err != nil {
-		return fmt.Errorf("format about dialog title failed: %w", err)
+		return fmt.Errorf("format about window title failed: %w", err)
 	}
-	result, _, callErr := procMessageBoxW.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(message)),
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	screenWidth, _, _ := procGetSystemMetrics.Call(0)
+	screenHeight, _, _ := procGetSystemMetrics.Call(1)
+	windowX := (int(screenWidth) - aboutWindowWidth) / 2
+	windowY := (int(screenHeight) - aboutWindowHeight) / 2
+	window, _, callErr := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
-		mbOK|mbIconInformation,
+		wsCaption|wsSysMenu|wsVisible,
+		uintptr(windowX), uintptr(windowY), aboutWindowWidth, aboutWindowHeight,
+		uintptr(hwnd), 0, hInstance, 0,
 	)
+	if window == 0 {
+		return fmt.Errorf("CreateWindowExW(about) failed: %w", callErr)
+	}
+	appState.aboutHwnd = windows.Handle(window)
+	if err := createAboutControls(appState.aboutHwnd); err != nil {
+		procDestroyWindow.Call(window)
+		return err
+	}
+	procSetForegroundWindow.Call(window)
+	return nil
+}
+
+func registerAboutWindowClass() error {
+	if aboutClassRegistered {
+		return nil
+	}
+	className, err := windows.UTF16PtrFromString("AltCmdAboutWindow")
+	if err != nil {
+		return fmt.Errorf("format about window class failed: %w", err)
+	}
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	brush, _, _ := procGetSysColorBrush.Call(colorWindow)
+	if brush == 0 {
+		return errors.New("GetSysColorBrush(COLOR_WINDOW) failed")
+	}
+	aboutWindowBrush = windows.Handle(brush)
+	wc := wndclassex{
+		CbSize:        uint32(unsafe.Sizeof(wndclassex{})),
+		LpfnWndProc:   aboutWndProcCallback,
+		HInstance:     windows.Handle(hInstance),
+		HIcon:         loadAppIconHandle(),
+		HIconSm:       loadAppIconHandle(),
+		HbrBackground: aboutWindowBrush,
+		LpszClassName: className,
+	}
+	result, _, callErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 	if result == 0 {
-		return fmt.Errorf("MessageBoxW failed: %w", callErr)
+		const errClassAlreadyExists syscall.Errno = 1410
+		if !errors.Is(callErr, errClassAlreadyExists) {
+			return fmt.Errorf("RegisterClassExW(about) failed: %w", callErr)
+		}
+	}
+	aboutClassRegistered = true
+	return nil
+}
+
+func createAboutControls(parent windows.Handle) error {
+	if _, err := createAboutControl(parent, "STATIC", fmt.Sprintf("AltCmd %s", applicationVersion), wsChild|wsVisible, 24, 24, 380, 30, 0); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "STATIC", "Windows 常驻托盘快捷键工具", wsChild|wsVisible, 24, 62, 380, 24, 0); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "STATIC", "QQ群：1102396065（点击复制）", wsChild|wsVisible|wsTabStop|ssNotify, 24, 110, 340, 26, aboutJoinGroupID); err != nil {
+		return err
+	}
+	if _, err := createAboutControl(parent, "STATIC", "github.com/lylyong/AltCmd", wsChild|wsVisible|wsTabStop|ssNotify, 24, 150, 340, 26, aboutGitHubID); err != nil {
+		return err
+	}
+	status, err := createAboutControl(parent, "STATIC", "", wsChild|wsVisible, 24, 190, 280, 30, aboutStatusID)
+	if err != nil {
+		return err
+	}
+	if appState != nil {
+		appState.aboutStatus = status
+	}
+	if _, err := createAboutControl(parent, "BUTTON", "关闭", wsChild|wsVisible|wsTabStop, 330, 190, 80, 30, aboutCloseID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createAboutControl(parent windows.Handle, className, text string, style uint32, x, y, width, height, id int) (windows.Handle, error) {
+	classPtr, err := windows.UTF16PtrFromString(className)
+	if err != nil {
+		return 0, fmt.Errorf("format about control class failed: %w", err)
+	}
+	textPtr, err := windows.UTF16PtrFromString(text)
+	if err != nil {
+		return 0, fmt.Errorf("format about control text failed: %w", err)
+	}
+	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	control, _, callErr := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(classPtr)),
+		uintptr(unsafe.Pointer(textPtr)),
+		uintptr(style),
+		uintptr(x), uintptr(y), uintptr(width), uintptr(height),
+		uintptr(parent), uintptr(id), hInstance, 0,
+	)
+	if control == 0 {
+		return 0, fmt.Errorf("create about %s control failed: %w", className, callErr)
+	}
+	return windows.Handle(control), nil
+}
+
+func aboutWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	if appState == nil {
+		return 0
+	}
+	switch message {
+	case wmCtlColorStatic:
+		controlID, _, _ := procGetDlgCtrlID.Call(lParam)
+		textColor := uintptr(0x0028201A)
+		if controlID == aboutJoinGroupID || controlID == aboutGitHubID {
+			textColor = 0x00D76B1F
+		}
+		procSetTextColor.Call(wParam, textColor)
+		procSetBkMode.Call(wParam, bkModeTransparent)
+		return uintptr(aboutWindowBrush)
+	case wmTimer:
+		if wParam == aboutStatusTimerID {
+			procKillTimer.Call(hwnd, aboutStatusTimerID)
+			setWindowText(windows.Handle(appState.aboutStatus), "")
+		}
+		return 0
+	case wmCommand:
+		controlID := int(uint16(wParam & 0xFFFF))
+		notification := uint16((wParam >> 16) & 0xFFFF)
+		if notification == bnClicked {
+			switch controlID {
+			case aboutJoinGroupID:
+				if err := copyTextToClipboard(hwnd, "1102396065"); err != nil {
+					setAboutStatus("复制失败：" + err.Error())
+				} else {
+					setAboutStatus("群号已复制到剪贴板")
+				}
+			case aboutGitHubID:
+				if err := openURL(hwnd, "https://github.com/lylyong/AltCmd"); err != nil {
+					showSettingsMessage(windows.Handle(hwnd), "打开 GitHub 页面失败：\n"+err.Error(), true)
+				}
+			case aboutCloseID:
+				procDestroyWindow.Call(hwnd)
+			}
+		}
+		return 0
+	case wmClose:
+		procDestroyWindow.Call(hwnd)
+		return 0
+	case wmDestroy:
+		if appState.aboutHwnd == windows.Handle(hwnd) {
+			appState.aboutHwnd = 0
+			appState.aboutStatus = 0
+		}
+		return 0
+	default:
+		result, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
+		return result
+	}
+}
+
+func setAboutStatus(text string) {
+	if appState == nil || appState.aboutStatus == 0 {
+		return
+	}
+	if err := setWindowText(appState.aboutStatus, text); err != nil {
+		log.Printf("update about status failed: %v", err)
+		return
+	}
+	procKillTimer.Call(uintptr(appState.aboutHwnd), aboutStatusTimerID)
+	timer, _, timerErr := procSetTimer.Call(uintptr(appState.aboutHwnd), aboutStatusTimerID, aboutStatusTimeout, 0)
+	if timer == 0 {
+		log.Printf("start about status timer failed: %v", timerErr)
+	}
+}
+
+func copyTextToClipboard(hwnd uintptr, text string) (resultErr error) {
+	opened, _, openErr := procOpenClipboard.Call(hwnd)
+	if opened == 0 {
+		return fmt.Errorf("OpenClipboard failed: %w", openErr)
+	}
+	defer func() {
+		closed, _, closeErr := procCloseClipboard.Call()
+		if closed == 0 && resultErr == nil {
+			resultErr = fmt.Errorf("CloseClipboard failed: %w", closeErr)
+		}
+	}()
+
+	empty, _, emptyErr := procEmptyClipboard.Call()
+	if empty == 0 {
+		return fmt.Errorf("EmptyClipboard failed: %w", emptyErr)
+	}
+	units := append(utf16.Encode([]rune(text)), 0)
+	size := uintptr(len(units)) * unsafe.Sizeof(uint16(0))
+	memory, _, allocErr := procGlobalAlloc.Call(gmemMoveable, size)
+	if memory == 0 {
+		return fmt.Errorf("GlobalAlloc failed: %w", allocErr)
+	}
+	clipboardMemory := windows.Handle(memory)
+	locked, _, lockErr := procGlobalLock.Call(memory)
+	if locked == 0 {
+		procGlobalFree.Call(memory)
+		return fmt.Errorf("GlobalLock failed: %w", lockErr)
+	}
+	copy(unsafe.Slice((*uint16)(unsafe.Pointer(locked)), len(units)), units)
+	procGlobalUnlock.Call(memory)
+
+	set, _, setErr := procSetClipboardData.Call(cfUnicodeText, memory)
+	if set == 0 {
+		procGlobalFree.Call(uintptr(clipboardMemory))
+		return fmt.Errorf("SetClipboardData failed: %w", setErr)
+	}
+	return nil
+}
+
+func openURL(hwnd uintptr, url string) error {
+	verb, err := windows.UTF16PtrFromString("open")
+	if err != nil {
+		return fmt.Errorf("format shell operation failed: %w", err)
+	}
+	link, err := windows.UTF16PtrFromString(url)
+	if err != nil {
+		return fmt.Errorf("format URL failed: %w", err)
+	}
+	result, _, _ := procShellExecuteW.Call(
+		hwnd,
+		uintptr(unsafe.Pointer(verb)),
+		uintptr(unsafe.Pointer(link)),
+		0, 0, swShow,
+	)
+	if result <= 32 {
+		return fmt.Errorf("Windows could not open URL (ShellExecuteW result %d)", result)
 	}
 	return nil
 }
