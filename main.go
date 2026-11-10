@@ -197,6 +197,7 @@ type app struct {
 	hookHandle           windows.Handle
 	settingsHwnd         windows.Handle
 	aboutHwnd            windows.Handle
+	aboutStatus          windows.Handle
 	settingsList         windows.Handle
 	settingsGameList     windows.Handle
 	settingsCombo        windows.Handle

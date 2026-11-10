@@ -50,6 +50,13 @@ const (
 	mbOK              = 0x00000000
 	mbIconError       = 0x00000010
 	mbIconInformation = 0x00000040
+	wmCtlColorStatic  = 0x0138
+	wmTimer           = 0x0113
+	ssNotify          = 0x0100
+	colorWindow       = 5
+	bkModeTransparent = 1
+	gmemMoveable      = 0x0002
+	cfUnicodeText     = 13
 
 	settingsListID     = 2001
 	settingsComboID    = 2002
@@ -62,9 +69,13 @@ const (
 	settingsCancelID   = 2010
 	settingsGameListID = 2013
 	aboutJoinGroupID   = 3001
-	aboutCloseID       = 3002
-	aboutWindowWidth   = 420
-	aboutWindowHeight  = 230
+	aboutGitHubID      = 3002
+	aboutCloseID       = 3003
+	aboutStatusID      = 3004
+	aboutStatusTimerID = 3005
+	aboutStatusTimeout = 2500
+	aboutWindowWidth   = 440
+	aboutWindowHeight  = 260
 
 	modNoRepeat = 0x4000
 
@@ -81,6 +92,7 @@ const (
 var (
 	settingsUser32           = windows.NewLazySystemDLL("user32.dll")
 	settingsComdlg32         = windows.NewLazySystemDLL("comdlg32.dll")
+	settingsGdi32            = windows.NewLazySystemDLL("gdi32.dll")
 	procRegisterHotKey       = settingsUser32.NewProc("RegisterHotKey")
 	procUnregisterHotKey     = settingsUser32.NewProc("UnregisterHotKey")
 	procSetWindowTextW       = settingsUser32.NewProc("SetWindowTextW")
@@ -91,12 +103,28 @@ var (
 	procMessageBoxW          = settingsUser32.NewProc("MessageBoxW")
 	procIsDialogMessageW     = settingsUser32.NewProc("IsDialogMessageW")
 	procGetAncestor          = settingsUser32.NewProc("GetAncestor")
+	procGetDlgCtrlID         = settingsUser32.NewProc("GetDlgCtrlID")
+	procGetSysColorBrush     = settingsUser32.NewProc("GetSysColorBrush")
+	procGetSystemMetrics     = settingsUser32.NewProc("GetSystemMetrics")
+	procSetTimer             = settingsUser32.NewProc("SetTimer")
+	procKillTimer            = settingsUser32.NewProc("KillTimer")
+	procOpenClipboard        = settingsUser32.NewProc("OpenClipboard")
+	procEmptyClipboard       = settingsUser32.NewProc("EmptyClipboard")
+	procSetClipboardData     = settingsUser32.NewProc("SetClipboardData")
+	procCloseClipboard       = settingsUser32.NewProc("CloseClipboard")
+	procSetBkMode            = settingsGdi32.NewProc("SetBkMode")
+	procSetTextColor         = settingsGdi32.NewProc("SetTextColor")
+	procGlobalAlloc          = kernel32.NewProc("GlobalAlloc")
+	procGlobalLock           = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock         = kernel32.NewProc("GlobalUnlock")
+	procGlobalFree           = kernel32.NewProc("GlobalFree")
 	procGetOpenFileNameW     = settingsComdlg32.NewProc("GetOpenFileNameW")
 	procCommDlgExtendedError = settingsComdlg32.NewProc("CommDlgExtendedError")
 	settingsWndProcCallback  = windows.NewCallback(settingsWindowProc)
 
 	settingsClassRegistered bool
 	aboutClassRegistered    bool
+	aboutWindowBrush        windows.Handle
 	aboutWndProcCallback    = windows.NewCallback(aboutWindowProc)
 	settingsActions         = []struct {
 		value string
@@ -817,12 +845,16 @@ func showAboutDialog(hwnd windows.Handle) error {
 		return fmt.Errorf("format about window title failed: %w", err)
 	}
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	screenWidth, _, _ := procGetSystemMetrics.Call(0)
+	screenHeight, _, _ := procGetSystemMetrics.Call(1)
+	windowX := (int(screenWidth) - aboutWindowWidth) / 2
+	windowY := (int(screenHeight) - aboutWindowHeight) / 2
 	window, _, callErr := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
 		wsCaption|wsSysMenu|wsVisible,
-		100, 100, aboutWindowWidth, aboutWindowHeight,
+		uintptr(windowX), uintptr(windowY), aboutWindowWidth, aboutWindowHeight,
 		uintptr(hwnd), 0, hInstance, 0,
 	)
 	if window == 0 {
@@ -846,13 +878,18 @@ func registerAboutWindowClass() error {
 		return fmt.Errorf("format about window class failed: %w", err)
 	}
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
+	brush, _, _ := procGetSysColorBrush.Call(colorWindow)
+	if brush == 0 {
+		return errors.New("GetSysColorBrush(COLOR_WINDOW) failed")
+	}
+	aboutWindowBrush = windows.Handle(brush)
 	wc := wndclassex{
 		CbSize:        uint32(unsafe.Sizeof(wndclassex{})),
 		LpfnWndProc:   aboutWndProcCallback,
 		HInstance:     windows.Handle(hInstance),
 		HIcon:         loadAppIconHandle(),
 		HIconSm:       loadAppIconHandle(),
-		HbrBackground: windows.Handle(6),
+		HbrBackground: aboutWindowBrush,
 		LpszClassName: className,
 	}
 	result, _, callErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
@@ -867,20 +904,26 @@ func registerAboutWindowClass() error {
 }
 
 func createAboutControls(parent windows.Handle) error {
-	title := fmt.Sprintf("AltCmd %s", applicationVersion)
-	if _, err := createAboutControl(parent, "STATIC", title, wsChild|wsVisible, 24, 24, 350, 28, 0); err != nil {
+	if _, err := createAboutControl(parent, "STATIC", fmt.Sprintf("AltCmd %s", applicationVersion), wsChild|wsVisible, 24, 24, 380, 30, 0); err != nil {
 		return err
 	}
-	if _, err := createAboutControl(parent, "STATIC", "Windows 常驻托盘快捷键工具", wsChild|wsVisible, 24, 60, 350, 24, 0); err != nil {
+	if _, err := createAboutControl(parent, "STATIC", "Windows 常驻托盘快捷键工具", wsChild|wsVisible, 24, 62, 380, 24, 0); err != nil {
 		return err
 	}
-	if _, err := createAboutControl(parent, "BUTTON", "QQ群：1102396065（点击加入）", wsChild|wsVisible|wsTabStop, 24, 98, 250, 32, aboutJoinGroupID); err != nil {
+	if _, err := createAboutControl(parent, "STATIC", "QQ群：1102396065（点击复制）", wsChild|wsVisible|wsTabStop|ssNotify, 24, 110, 340, 26, aboutJoinGroupID); err != nil {
 		return err
 	}
-	if _, err := createAboutControl(parent, "STATIC", "https://github.com/lylyong/AltCmd", wsChild|wsVisible, 24, 148, 350, 24, 0); err != nil {
+	if _, err := createAboutControl(parent, "STATIC", "github.com/lylyong/AltCmd", wsChild|wsVisible|wsTabStop|ssNotify, 24, 150, 340, 26, aboutGitHubID); err != nil {
 		return err
 	}
-	if _, err := createAboutControl(parent, "BUTTON", "关闭", wsChild|wsVisible|wsTabStop, 300, 148, 80, 30, aboutCloseID); err != nil {
+	status, err := createAboutControl(parent, "STATIC", "", wsChild|wsVisible, 24, 190, 280, 30, aboutStatusID)
+	if err != nil {
+		return err
+	}
+	if appState != nil {
+		appState.aboutStatus = status
+	}
+	if _, err := createAboutControl(parent, "BUTTON", "关闭", wsChild|wsVisible|wsTabStop, 330, 190, 80, 30, aboutCloseID); err != nil {
 		return err
 	}
 	return nil
@@ -915,14 +958,35 @@ func aboutWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintp
 		return 0
 	}
 	switch message {
+	case wmCtlColorStatic:
+		controlID, _, _ := procGetDlgCtrlID.Call(lParam)
+		textColor := uintptr(0x0028201A)
+		if controlID == aboutJoinGroupID || controlID == aboutGitHubID {
+			textColor = 0x00D76B1F
+		}
+		procSetTextColor.Call(wParam, textColor)
+		procSetBkMode.Call(wParam, bkModeTransparent)
+		return uintptr(aboutWindowBrush)
+	case wmTimer:
+		if wParam == aboutStatusTimerID {
+			procKillTimer.Call(hwnd, aboutStatusTimerID)
+			setWindowText(windows.Handle(appState.aboutStatus), "")
+		}
+		return 0
 	case wmCommand:
 		controlID := int(uint16(wParam & 0xFFFF))
 		notification := uint16((wParam >> 16) & 0xFFFF)
 		if notification == bnClicked {
 			switch controlID {
 			case aboutJoinGroupID:
-				if err := openQQGroup(hwnd); err != nil {
-					showSettingsMessage(windows.Handle(hwnd), "打开 QQ 群加入页面失败：\n"+err.Error(), true)
+				if err := copyTextToClipboard(hwnd, "1102396065"); err != nil {
+					setAboutStatus("复制失败：" + err.Error())
+				} else {
+					setAboutStatus("群号已复制到剪贴板")
+				}
+			case aboutGitHubID:
+				if err := openURL(hwnd, "https://github.com/lylyong/AltCmd"); err != nil {
+					showSettingsMessage(windows.Handle(hwnd), "打开 GitHub 页面失败：\n"+err.Error(), true)
 				}
 			case aboutCloseID:
 				procDestroyWindow.Call(hwnd)
@@ -935,6 +999,7 @@ func aboutWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintp
 	case wmDestroy:
 		if appState.aboutHwnd == windows.Handle(hwnd) {
 			appState.aboutHwnd = 0
+			appState.aboutStatus = 0
 		}
 		return 0
 	default:
@@ -943,14 +1008,68 @@ func aboutWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintp
 	}
 }
 
-func openQQGroup(hwnd uintptr) error {
+func setAboutStatus(text string) {
+	if appState == nil || appState.aboutStatus == 0 {
+		return
+	}
+	if err := setWindowText(appState.aboutStatus, text); err != nil {
+		log.Printf("update about status failed: %v", err)
+		return
+	}
+	procKillTimer.Call(uintptr(appState.aboutHwnd), aboutStatusTimerID)
+	timer, _, timerErr := procSetTimer.Call(uintptr(appState.aboutHwnd), aboutStatusTimerID, aboutStatusTimeout, 0)
+	if timer == 0 {
+		log.Printf("start about status timer failed: %v", timerErr)
+	}
+}
+
+func copyTextToClipboard(hwnd uintptr, text string) (resultErr error) {
+	opened, _, openErr := procOpenClipboard.Call(hwnd)
+	if opened == 0 {
+		return fmt.Errorf("OpenClipboard failed: %w", openErr)
+	}
+	defer func() {
+		closed, _, closeErr := procCloseClipboard.Call()
+		if closed == 0 && resultErr == nil {
+			resultErr = fmt.Errorf("CloseClipboard failed: %w", closeErr)
+		}
+	}()
+
+	empty, _, emptyErr := procEmptyClipboard.Call()
+	if empty == 0 {
+		return fmt.Errorf("EmptyClipboard failed: %w", emptyErr)
+	}
+	units := append(utf16.Encode([]rune(text)), 0)
+	size := uintptr(len(units)) * unsafe.Sizeof(uint16(0))
+	memory, _, allocErr := procGlobalAlloc.Call(gmemMoveable, size)
+	if memory == 0 {
+		return fmt.Errorf("GlobalAlloc failed: %w", allocErr)
+	}
+	clipboardMemory := windows.Handle(memory)
+	locked, _, lockErr := procGlobalLock.Call(memory)
+	if locked == 0 {
+		procGlobalFree.Call(memory)
+		return fmt.Errorf("GlobalLock failed: %w", lockErr)
+	}
+	copy(unsafe.Slice((*uint16)(unsafe.Pointer(locked)), len(units)), units)
+	procGlobalUnlock.Call(memory)
+
+	set, _, setErr := procSetClipboardData.Call(cfUnicodeText, memory)
+	if set == 0 {
+		procGlobalFree.Call(uintptr(clipboardMemory))
+		return fmt.Errorf("SetClipboardData failed: %w", setErr)
+	}
+	return nil
+}
+
+func openURL(hwnd uintptr, url string) error {
 	verb, err := windows.UTF16PtrFromString("open")
 	if err != nil {
 		return fmt.Errorf("format shell operation failed: %w", err)
 	}
-	link, err := windows.UTF16PtrFromString("tencent://AddGroup/?from=groupmessage&isappinstalled=0&groupcode=1102396065")
+	link, err := windows.UTF16PtrFromString(url)
 	if err != nil {
-		return fmt.Errorf("format QQ group link failed: %w", err)
+		return fmt.Errorf("format URL failed: %w", err)
 	}
 	result, _, _ := procShellExecuteW.Call(
 		hwnd,
@@ -959,7 +1078,7 @@ func openQQGroup(hwnd uintptr) error {
 		0, 0, swShow,
 	)
 	if result <= 32 {
-		return fmt.Errorf("Windows could not open the QQ group link (ShellExecuteW result %d)", result)
+		return fmt.Errorf("Windows could not open URL (ShellExecuteW result %d)", result)
 	}
 	return nil
 }
