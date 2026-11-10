@@ -123,8 +123,9 @@ const (
 	hotkeyActionCloseWindow  = "close_window"
 	hotkeyActionSwitchWindow = "switch_window"
 	hotkeyActionFind         = "find"
+	hotkeyActionRefresh      = "refresh"
 
-	currentConfigVersion = 1
+	currentConfigVersion = 2
 )
 
 //go:embed VERSION
@@ -168,6 +169,7 @@ var (
 	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
 	procShellNotifyIconW    = shell32.NewProc("Shell_NotifyIconW")
+	procShellExecuteW       = shell32.NewProc("ShellExecuteW")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 
 	globalWndProc = windows.NewCallback(wndProc)
@@ -194,7 +196,10 @@ type app struct {
 	nextHotkeyID         int
 	hookHandle           windows.Handle
 	settingsHwnd         windows.Handle
+	aboutHwnd            windows.Handle
+	aboutStatus          windows.Handle
 	settingsList         windows.Handle
+	settingsGameList     windows.Handle
 	settingsCombo        windows.Handle
 	settingsAction       windows.Handle
 	settingsEnabled      windows.Handle
@@ -546,6 +551,7 @@ func defaultConfig() config {
 		Hotkeys: []hotkeyConfig{
 			{Combo: "Alt+C", Action: hotkeyActionCopy, Enabled: true},
 			{Combo: "Alt+F", Action: hotkeyActionFind, Enabled: true},
+			{Combo: "Alt+R", Action: hotkeyActionRefresh, Enabled: true},
 			{Combo: "Alt+V", Action: hotkeyActionPaste, Enabled: true},
 			{Combo: "Alt+X", Action: hotkeyActionCut, Enabled: true},
 			{Combo: "Alt+Z", Action: hotkeyActionUndo, Enabled: true},
@@ -564,22 +570,38 @@ func migrateConfig(cfg *config) bool {
 		return false
 	}
 
-	findMods, findKey, _ := parseCombo("Alt+F")
-	for _, item := range cfg.Hotkeys {
+	if cfg.ConfigVersion < 1 {
+		if !hasHotkeyCombo(cfg.Hotkeys, "Alt+F") {
+			cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
+				Combo:   "Alt+F",
+				Action:  hotkeyActionFind,
+				Enabled: true,
+			})
+		}
+	}
+	if cfg.ConfigVersion < 2 && !hasHotkeyCombo(cfg.Hotkeys, "Alt+R") {
+		cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
+			Combo:   "Alt+R",
+			Action:  hotkeyActionRefresh,
+			Enabled: true,
+		})
+	}
+	cfg.ConfigVersion = currentConfigVersion
+	return true
+}
+
+func hasHotkeyCombo(hotkeys []hotkeyConfig, combo string) bool {
+	wantMods, wantKey, err := parseCombo(combo)
+	if err != nil {
+		return false
+	}
+	for _, item := range hotkeys {
 		mods, key, err := parseCombo(item.Combo)
-		if err == nil && mods == findMods && key == findKey {
-			cfg.ConfigVersion = currentConfigVersion
+		if err == nil && mods == wantMods && key == wantKey {
 			return true
 		}
 	}
-
-	cfg.Hotkeys = append(cfg.Hotkeys, hotkeyConfig{
-		Combo:   "Alt+F",
-		Action:  hotkeyActionFind,
-		Enabled: true,
-	})
-	cfg.ConfigVersion = currentConfigVersion
-	return true
+	return false
 }
 
 func normalizeConfig(cfg *config) {
@@ -973,6 +995,8 @@ func (a *app) handleHotkeyID(id int) {
 		sendCtrlCombo('C')
 	case hotkeyActionFind:
 		sendCtrlCombo('F')
+	case hotkeyActionRefresh:
+		sendCtrlCombo('R')
 	case hotkeyActionPaste:
 		sendCtrlCombo('V')
 	case hotkeyActionCut:
@@ -1152,7 +1176,7 @@ func callNextHook(nCode int, wParam uintptr, lParam uintptr) uintptr {
 
 func isSupportedAction(action string) bool {
 	switch action {
-	case hotkeyActionCopy, hotkeyActionFind, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
+	case hotkeyActionCopy, hotkeyActionFind, hotkeyActionRefresh, hotkeyActionPaste, hotkeyActionCut, hotkeyActionUndo,
 		hotkeyActionSave, hotkeyActionSelectAll, hotkeyActionNewTab,
 		hotkeyActionCloseTab, hotkeyActionCloseWindow,
 		hotkeyActionSwitchWindow:

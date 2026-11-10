@@ -4,7 +4,7 @@
 
 AltCmd is a Windows system-tray utility that maps familiar Alt-based shortcuts to common development actions.
 
-Current version: **1.1.1**
+Current version: **1.2.3**
 
 ## Features
 
@@ -19,6 +19,7 @@ Current version: **1.1.1**
 
 - `Alt+C` -> Copy: tries `WM_COPY` first, then falls back to `Ctrl+C`
 - `Alt+F` -> `Ctrl+F` (Find)
+- `Alt+R` -> `Ctrl+R` (Refresh/reload)
 - `Alt+V` -> Paste: tries `WM_PASTE` first, then falls back to `Ctrl+V`
 - `Alt+X` -> `Ctrl+X`
 - `Alt+Z` -> `Ctrl+Z`
@@ -50,7 +51,7 @@ The Windows GUI subsystem prevents a console window from appearing at startup. T
 
 ## Install and run at sign-in
 
-Run `AltCmd-<VERSION>.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
+Run `AltCmd-<VERSION>.exe` directly to deploy without Go or the deployment script. On first launch, AltCmd creates the user configuration, installs itself to the stable path `%LOCALAPPDATA%\Programs\AltCmd\AltCmd.exe`, enables run-at-sign-in for the current user, and starts the installed application. Auto-start is enabled by default and can be disabled from the tray menu. The trace console is hidden by default.
 
 Alternatively, run this script from the project directory in Windows PowerShell:
 
@@ -58,11 +59,11 @@ Alternatively, run this script from the project directory in Windows PowerShell:
 .\deploy.ps1
 ```
 
-The script checks the Windows and Go versions, builds AltCmd, installs it to `%LOCALAPPDATA%\Programs\AltCmd`, configures it to run when the current user signs in, and launches it.
+The script checks the Windows and Go versions, creates a versioned `AltCmd-<VERSION>.exe` in the project directory, then installs it as `AltCmd.exe` in `%LOCALAPPDATA%\Programs\AltCmd`, configures it to run when the current user signs in, and launches it.
 On redeployment, the script first closes an AltCmd instance running from that install path, then replaces and launches the new version. Instances running from other paths are left alone. Uninstalling also stops the installed instance first.
 
 - **Build requirements:** Go 1.23 or later must be installed on the build machine; the build and deployment scripts check the Go version. The first build requires an internet connection to download the pinned Windows resource generator.
-- **Runtime requirements:** The generated `AltCmd.exe` is self-contained; the target computer does not need Go installed.
+- **Runtime requirements:** The generated `AltCmd-<VERSION>.exe` is self-contained; the target computer does not need Go installed. The installed executable keeps the stable name `AltCmd.exe`.
 - **Windows support:** Go 1.23 officially supports Windows 10 / Windows Server 2016 and later. Accordingly, the deployment script only allows installation on these versions or later. Older Windows versions are outside the supported range of this toolchain.
 
 Not requiring Go at runtime does not mean AltCmd runs on every older Windows version. Runtime Windows support is still limited by the Go toolchain used to build it.
@@ -113,6 +114,7 @@ Supported `action` values:
 
 - `copy`
 - `find`
+- `refresh`
 - `paste`
 - `cut`
 - `undo`
@@ -131,11 +133,11 @@ Examples of `combo` values:
 
 The shortcut settings window currently accepts only `Alt+key` combinations and can only edit or remove existing shortcuts; it does not add shortcuts. `enabled` is a mutually exclusive Boolean state: `true` enables a shortcut and `false` disables it. Disabled shortcuts are not registered or executed. Select **Probe conflicts** to check for conflicts with Windows registered global hotkeys and mark results in the list. Windows does not provide an API to identify which process registered a hotkey. The probe also cannot detect shortcuts handled internally by applications or conflicts with other low-level keyboard hooks. An unavailable probe result does not necessarily mean that a shortcut is invalid or in conflict.
 
-On first launch, older configurations are upgraded automatically: an enabled `Alt+F` find shortcut is added if no `Alt+F` mapping exists. An existing `Alt+F` mapping is preserved.
+On first launch, older configurations are upgraded automatically: enabled `Alt+F` and `Alt+R` shortcuts are added when no mappings exist. Existing mappings for either shortcut are preserved.
 
 After editing the JSON file manually, select **Reload configuration** from the tray menu to apply the changes. In the settings window, select **Save and apply** to save and apply changes immediately.
 
-Select **Add game executable...** in the shortcut settings window and choose a game's `.exe` to add its process name to the game list and enable game mode. When that game is in the foreground, Alt shortcut mappings are suspended. The list is saved in the user configuration.
+The shortcut settings window shows the current game process list and lets you add or remove entries. Adding a game automatically enables game mode. When a listed game is in the foreground, Alt shortcut mappings are suspended. The list is saved in the user configuration.
 
 `switch_window` cycles through top-level windows owned by the foreground application. It is similar to switching between windows within an application on macOS, but it is not a system-wide replacement for `Alt+Tab`.
 
